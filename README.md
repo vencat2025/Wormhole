@@ -2,6 +2,8 @@
 
 **WormHole** is an enterprise AI inference middleware layer designed to drastically reduce LLM API spend while preserving or elevating completion quality. 
 
+![WormHole Automated Demo Recording](docs/wormhole_demo.gif)
+
 It introduces a dual-model intermediate layer between your client application harness and downstream LLM providers:
 1. **Prompt Enhancer (Model 1)**: Quality-enriches and structures the user prompt so smaller, cheaper models achieve frontier-quality output.
 2. **Router Model (Model 2)**: Evaluates the enhanced prompt against registered enterprise models and dynamically routes it to the lowest-cost model capable of handling the task.

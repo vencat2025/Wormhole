@@ -1,0 +1,323 @@
+import asyncio
+import time
+import logging
+from typing import List, Dict, Any, Optional
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends, Response
+from fastapi.responses import HTMLResponse, PlainTextResponse
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from sqlmodel import Session, select, func
+
+from config import settings
+from db.database import init_db, engine
+from db.models import InferenceLog
+from services.enhancer import enhance_prompt
+from services.router import route_prompt
+from services.dispatcher import dispatch_inference
+from services.judge import evaluate_completion
+from services.dataset import export_dataset_jsonl
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("wormhole.main")
+
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    logger.info("WormHole DB Initialized successfully.")
+    yield
+
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    description="Enterprise AI Inference Middleware Gateway for Cost Optimization & Quality Enhancement.",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- Models for OpenAI API Spec ---
+class ChatMessage(BaseModel):
+    role: str
+    content: str
+
+class ChatCompletionRequest(BaseModel):
+    model: Optional[str] = "wormhole-auto"  # Default routing keyword
+    messages: List[ChatMessage]
+    temperature: Optional[float] = 0.7
+    top_p: Optional[float] = 1.0
+    stream: Optional[bool] = False
+
+# --- Core Gateway Endpoint ---
+@app.post("/v1/chat/completions")
+async def chat_completions(request: ChatCompletionRequest, background_tasks: BackgroundTasks):
+    if not request.messages:
+        raise HTTPException(status_code=400, detail="Messages array cannot be empty.")
+    
+    # Extract original user prompt from the last user message
+    user_messages = [m for m in request.messages if m.role == "user"]
+    if not user_messages:
+        original_prompt = request.messages[-1].content
+    else:
+        original_prompt = user_messages[-1].content
+
+    # Step 1: Model 1 - Quality Prompt Enhancement
+    enhanced_prompt = await enhance_prompt(original_prompt)
+
+    # Step 2: Model 2 - Router Decision
+    selected_model, router_reasoning = await route_prompt(enhanced_prompt)
+
+    # Step 3: Execution Dispatcher & Cost Metric Computation
+    raw_messages = [{"role": m.role, "content": m.content} for m in request.messages]
+    result = await dispatch_inference(
+        original_prompt=original_prompt,
+        enhanced_prompt=enhanced_prompt,
+        enhancer_model=settings.ENHANCER_MODEL,
+        router_model=settings.ROUTER_MODEL,
+        selected_model=selected_model,
+        router_reasoning=router_reasoning,
+        original_messages=raw_messages
+    )
+
+    # Step 4: Asynchronous LLM-as-a-Judge Auto-Evaluation Task
+    background_tasks.add_task(
+        evaluate_completion,
+        request_id=result["request_id"],
+        enhanced_prompt=enhanced_prompt,
+        completion=result["completion"]
+    )
+
+    # Format OpenAI-compatible completion response
+    response_payload = {
+        "id": f"chatcmpl-{result['request_id']}",
+        "object": "chat.completion",
+        "created": int(time.time()),
+        "model": selected_model,
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": result["completion"]
+                },
+                "finish_reason": "stop"
+            }
+        ],
+        "usage": {
+            "prompt_tokens": result["metrics"]["prompt_tokens"],
+            "completion_tokens": result["metrics"]["completion_tokens"],
+            "total_tokens": result["metrics"]["total_tokens"]
+        },
+        "wormhole_metadata": {
+            "request_id": result["request_id"],
+            "enhancer_model": settings.ENHANCER_MODEL,
+            "router_model": settings.ROUTER_MODEL,
+            "selected_model": selected_model,
+            "router_reasoning": router_reasoning,
+            "actual_cost_usd": result["metrics"]["actual_cost_usd"],
+            "baseline_cost_usd": result["metrics"]["baseline_cost_usd"],
+            "cost_savings_usd": result["metrics"]["cost_savings_usd"],
+            "savings_percentage": f"{result['metrics']['savings_percentage']}%"
+        }
+    }
+    
+    return response_payload
+
+# --- Enterprise Admin & Analytics APIs ---
+@app.get("/api/models")
+def list_candidate_models():
+    return {"models": settings.CANDIDATE_MODELS}
+
+@app.get("/api/logs")
+def list_logs(limit: int = 50, offset: int = 0):
+    with Session(engine) as session:
+        statement = select(InferenceLog).order_by(InferenceLog.id.desc()).offset(offset).limit(limit)
+        logs = session.exec(statement).all()
+        
+        # Summary Analytics
+        total_requests = session.exec(select(func.count(InferenceLog.id))).one()
+        total_actual_cost = session.exec(select(func.sum(InferenceLog.actual_cost))).one() or 0.0
+        total_baseline_cost = session.exec(select(func.sum(InferenceLog.baseline_cost))).one() or 0.0
+        total_savings = session.exec(select(func.sum(InferenceLog.cost_savings))).one() or 0.0
+        avg_score = session.exec(select(func.avg(InferenceLog.judge_score))).one() or 0.0
+
+        return {
+            "summary": {
+                "total_requests": total_requests,
+                "total_actual_cost_usd": round(total_actual_cost, 4),
+                "total_baseline_cost_usd": round(total_baseline_cost, 4),
+                "total_savings_usd": round(total_savings, 4),
+                "savings_percentage": round((total_savings / max(total_baseline_cost, 0.0001)) * 100, 1),
+                "average_judge_score": round(avg_score, 2)
+            },
+            "logs": logs
+        }
+
+@app.get("/api/dataset/export")
+def export_dataset(target: str = "router", min_score: float = 7.0):
+    jsonl_content = export_dataset_jsonl(target_type=target, min_score=min_score)
+    return PlainTextResponse(
+        content=jsonl_content,
+        media_type="application/x-jsonlines",
+        headers={"Content-Disposition": f'attachment; filename="wormhole_{target}_dataset.jsonl"'}
+    )
+
+# --- Admin Dashboard UI ---
+@app.get("/", response_class=HTMLResponse)
+def get_dashboard():
+    return """<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WormHole | AI Inference Cost Reducer</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0b0f19;
+            --panel: #111827;
+            --border: #1f2937;
+            --accent: #6366f1;
+            --accent-glow: rgba(99, 102, 241, 0.2);
+            --green: #10b981;
+            --green-glow: rgba(16, 185, 129, 0.15);
+            --text: #f9fafb;
+            --text-sub: #9ca3af;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; }
+        body { background: var(--bg); color: var(--text); padding: 24px; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
+        .logo { display: flex; align-items: center; gap: 12px; font-size: 20px; font-weight: 700; color: #fff; }
+        .badge { background: linear-gradient(135deg, var(--accent), #8b5cf6); padding: 4px 10px; borderRadius: 12px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+        
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3); }
+        .card-title { font-size: 13px; font-weight: 500; color: var(--text-sub); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+        .card-value { font-size: 28px; font-weight: 700; color: #fff; }
+        .card-sub { font-size: 13px; color: var(--green); margin-top: 4px; font-weight: 500; }
+
+        .section-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: center; }
+        .export-btn { background: var(--panel); border: 1px solid var(--accent); color: #fff; padding: 8px 16px; border-radius: 8px; font-size: 13px; cursor: pointer; text-decoration: none; transition: background 0.2s; }
+        .export-btn:hover { background: var(--accent); }
+
+        table { width: 100%; border-collapse: collapse; background: var(--panel); border-radius: 12px; overflow: hidden; border: 1px solid var(--border); }
+        th, td { padding: 14px 16px; text-align: left; font-size: 13px; border-bottom: 1px solid var(--border); }
+        th { background: #1f2937; font-weight: 600; color: var(--text-sub); text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; }
+        tr:hover { background: rgba(255,255,255,0.02); }
+        
+        .tag { display: inline-block; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+        .tag-model { background: rgba(99, 102, 241, 0.15); color: #a5b4fc; border: 1px solid rgba(99, 102, 241, 0.3); }
+        .tag-score { background: var(--green-glow); color: var(--green); border: 1px solid rgba(16, 185, 129, 0.3); }
+        .prompt-preview { max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-sub); }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="logo">
+            ⚡ WormHole <span class="badge">Enterprise Gateway</span>
+        </div>
+        <div>
+            <a href="/api/dataset/export?target=router" class="export-btn">📥 Export Router Dataset (JSONL)</a>
+            <a href="/api/dataset/export?target=enhancer" class="export-btn" style="margin-left:8px;">📥 Export Enhancer Dataset (JSONL)</a>
+        </div>
+    </div>
+
+    <div class="metrics-grid">
+        <div class="card">
+            <div class="card-title">Total Requests</div>
+            <div class="card-value" id="total-requests">0</div>
+            <div class="card-sub">Middleware Active</div>
+        </div>
+        <div class="card">
+            <div class="card-title">Total Cost Savings</div>
+            <div class="card-value" id="total-savings" style="color: var(--green);">$0.0000</div>
+            <div class="card-sub" id="savings-pct">0.0% Saved vs GPT-4o Baseline</div>
+        </div>
+        <div class="card">
+            <div class="card-title">Actual API Spend</div>
+            <div class="card-value" id="actual-spend">$0.0000</div>
+            <div class="card-sub" id="baseline-spend">Baseline: $0.0000</div>
+        </div>
+        <div class="card">
+            <div class="card-title">Avg Judge Score</div>
+            <div class="card-value" id="avg-score">0.0 / 10</div>
+            <div class="card-sub">Auto LLM-as-a-Judge Score</div>
+        </div>
+    </div>
+
+    <div class="section-title">
+        <span>Inference Traffic & Routing Decisions</span>
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Original Prompt</th>
+                <th>Selected Target Model</th>
+                <th>Router Reasoning</th>
+                <th>Cost / Savings</th>
+                <th>Judge Score</th>
+            </tr>
+        </thead>
+        <tbody id="logs-body">
+            <tr><td colspan="6" style="text-align: center; color: var(--text-sub);">Loading inference logs...</td></tr>
+        </tbody>
+    </table>
+
+    <script>
+        async function fetchAnalytics() {
+            try {
+                const res = await fetch('/api/logs');
+                const data = await res.json();
+                const s = data.summary;
+                
+                document.getElementById('total-requests').innerText = s.total_requests;
+                document.getElementById('total-savings').innerText = `$${s.total_savings_usd.toFixed(4)}`;
+                document.getElementById('savings-pct').innerText = `${s.savings_percentage}% Saved vs Baseline`;
+                document.getElementById('actual-spend').innerText = `$${s.total_actual_cost_usd.toFixed(4)}`;
+                document.getElementById('baseline-spend').innerText = `Baseline (GPT-4o): $${s.total_baseline_cost_usd.toFixed(4)}`;
+                document.getElementById('avg-score').innerText = `${s.average_judge_score} / 10`;
+
+                const tbody = document.getElementById('logs-body');
+                if (data.logs.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-sub);">No requests logged yet. Send chat completion calls to <code>/v1/chat/completions</code>.</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.logs.map(log => `
+                    <tr>
+                        <td style="font-family: monospace; font-size: 11px; color: var(--text-sub);">${log.request_id}</td>
+                        <td>
+                            <div class="prompt-preview" title="${log.original_prompt.replace(/"/g, '&quot;')}">${log.original_prompt}</div>
+                        </td>
+                        <td><span class="tag tag-model">${log.selected_model}</span></td>
+                        <td style="font-size: 12px; color: var(--text-sub); max-width: 250px;">${log.router_reasoning || 'N/A'}</td>
+                        <td>
+                            <div style="font-weight: 600;">$${log.actual_cost.toFixed(6)}</div>
+                            <div style="font-size: 11px; color: var(--green);">Saved $${log.cost_savings.toFixed(6)}</div>
+                        </td>
+                        <td>
+                            ${log.judge_score !== null ? `<span class="tag tag-score">★ ${log.judge_score.toFixed(1)}/10</span>` : '<span style="color:var(--text-sub); font-size:11px;">Pending...</span>'}
+                        </td>
+                    </tr>
+                `).join('');
+            } catch (err) {
+                console.error("Error loading analytics", err);
+            }
+        }
+
+        fetchAnalytics();
+        setInterval(fetchAnalytics, 5000);
+    </script>
+</body>
+</html>
+"""

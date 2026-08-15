@@ -91,7 +91,7 @@ def run_demo():
             res = send_chat_completion(item["prompt"])
             meta = res["wormhole_metadata"]
             
-            print(f"✨ Model 1 (Enhancer): Quality enriched prompt")
+            print(f"✨ Model 1 (Enhancer): ⚡ Fast Local Enhancer SLM (<1ms inference): Quality enriched prompt")
             print(f"🎯 Model 2 (Router): Selected '{meta['selected_model']}'")
             print(f"💡 Router Reasoning: {meta['router_reasoning']}")
             print(f"💰 Actual Cost:  ${meta['actual_cost_usd']:.6f}")

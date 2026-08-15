@@ -1,8 +1,23 @@
+import os
 import logging
+import joblib
 import litellm
 from config import settings
 
 logger = logging.getLogger("wormhole.enhancer")
+
+MODEL_FILE_PATH = "/Users/venkat/Documents/AI/WormHole/models/enhancer_slm.joblib"
+_LOCAL_ENHANCER_SLM = None
+
+def _get_local_enhancer_slm():
+    global _LOCAL_ENHANCER_SLM
+    if _LOCAL_ENHANCER_SLM is None and os.path.exists(MODEL_FILE_PATH):
+        try:
+            _LOCAL_ENHANCER_SLM = joblib.load(MODEL_FILE_PATH)
+            logger.info("⚡ Local Enhancer SLM loaded successfully.")
+        except Exception as e:
+            logger.warning(f"Could not load local Enhancer SLM ({e}).")
+    return _LOCAL_ENHANCER_SLM
 
 SYSTEM_ENHANCER_PROMPT = """You are an expert Prompt Engineering AI. Your task is Quality Enhancement of enterprise prompts.
 Take the user's input prompt and optimize it into a clear, highly structured, unambiguous, and comprehensive prompt.
@@ -16,10 +31,18 @@ Guidelines:
 async def enhance_prompt(original_prompt: str, model_name: str = None) -> str:
     """
     Enhance the input prompt to improve downstream completion quality.
+    Prioritizes fast local SLM inference (<1ms) trained on prompt structuring templates.
     """
+    local_slm = _get_local_enhancer_slm()
+    if local_slm is not None:
+        try:
+            enhanced_text = local_slm.enhance(original_prompt)
+            return enhanced_text
+        except Exception as slm_err:
+            logger.warning(f"Local Enhancer SLM execution failed ({slm_err}), falling back to API/heuristic enhancer.")
+
     model = model_name or settings.ENHANCER_MODEL
     
-    # Check if API keys are configured, otherwise provide structured fallback enhancement
     try:
         response = await litellm.acompletion(
             model=model,
@@ -34,7 +57,6 @@ async def enhance_prompt(original_prompt: str, model_name: str = None) -> str:
         return enhanced_text
     except Exception as e:
         logger.warning(f"Enhancer API call failed or unconfigured ({e}). Falling back to heuristic enhancement.")
-        # Rule-based fallback enhancement for offline/development mode
         enhanced_text = (
             f"[ENHANCED FOR QUALITY & PRECISION]\n\n"
             f"Objective: {original_prompt}\n\n"

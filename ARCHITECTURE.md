@@ -10,7 +10,7 @@ This document outlines the detailed architectural breakdown and flow mechanics o
 sequenceDiagram
     autonumber
     actor Client as Client App / Harness
-    participant Gateway as FastAPI Gateway (/v1/chat/completions)
+    participant Gateway as FastAPI Gateway
     participant Enhancer as Model 1: Prompt Enhancer
     participant Router as Model 2: Router LLM
     participant Dispatcher as Dispatcher & Cost Engine
@@ -18,22 +18,22 @@ sequenceDiagram
     participant Judge as LLM-as-a-Judge
     participant DB as SQLite DB
 
-    Client->>Gateway: POST /v1/chat/completions (Raw Prompt)
-    Gateway->>Enhancer: enhance_prompt(raw_prompt)
-    Enhancer-->>Gateway: Enhanced Prompt (Quality Enriched)
-    Gateway->>Router: route_prompt(enhanced_prompt)
+    Client->>Gateway: POST /v1/chat/completions - Raw Prompt
+    Gateway->>Enhancer: enhance_prompt - raw_prompt
+    Enhancer-->>Gateway: Enhanced Prompt - Quality Enriched
+    Gateway->>Router: route_prompt - enhanced_prompt
     Router-->>Gateway: Selected Model ID + Reasoning JSON
-    Gateway->>Dispatcher: dispatch_inference(...)
-    Dispatcher->>Target: Call Target Model API (via LiteLLM)
+    Gateway->>Dispatcher: dispatch_inference
+    Dispatcher->>Target: Call Target Model API via LiteLLM
     Target-->>Dispatcher: Completion Response + Usage Tokens
     Dispatcher->>Dispatcher: Compute Actual Cost vs GPT-4o Baseline Cost
-    Dispatcher->>DB: Log Inference (request_id, prompt, cost, savings)
+    Dispatcher->>DB: Log Inference details
     Dispatcher-->>Gateway: Completion + WormHole Cost Metadata
-    Gateway-->>Client: Response Payload (OpenAI Spec)
+    Gateway-->>Client: Response Payload - OpenAI Spec
     
     par Async Auto-Evaluation
-        Gateway->>Judge: evaluate_completion(request_id, enhanced_prompt, completion)
-        Judge-->>DB: Update Log with Judge Score (1.0-10.0) & Feedback
+        Gateway->>Judge: evaluate_completion
+        Judge-->>DB: Update Log with Judge Quality Score and Feedback
     end
 ```
 

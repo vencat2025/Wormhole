@@ -13,38 +13,38 @@ It introduces a dual-model intermediate layer between your client application ha
 ```mermaid
 graph TD
     %% Client & Gateway
-    Client["📱 Client Application / Harness"] -->|1. Standard OpenAI Chat Spec| GW["⚡ WormHole FastAPI Gateway (/v1/chat/completions)"]
+    Client["Client Application / Harness"] -->|"1. Standard OpenAI Chat Spec"| GW["WormHole FastAPI Gateway"]
     
     %% Intermediate Layer
     subgraph Intermediate ["WormHole Intermediate Layer"]
-        GW -->|2. Raw Prompt| Enhancer["✨ Model 1: Prompt Enhancer LLM (Quality Optimization)"]
-        Enhancer -->|3. Enhanced Prompt| Router["🎯 Model 2: Router LLM (Cost & Capability Analysis)"]
-        Router -->|4. Selected Target Model & Reasoning| Dispatcher["🚀 Execution Dispatcher & Cost Engine"]
+        GW -->|"2. Raw Prompt"| Enhancer["Model 1: Prompt Enhancer LLM - Quality Optimization"]
+        Enhancer -->|"3. Enhanced Prompt"| Router["Model 2: Router LLM - Cost & Capability Analysis"]
+        Router -->|"4. Selected Model & Reasoning"| Dispatcher["Execution Dispatcher & Cost Engine"]
     end
     
     %% Target LLMs Fleet
     subgraph EnterpriseFleet ["Enterprise Candidate Models Fleet"]
-        Dispatcher -->|5. Dispatches Enhanced Prompt| Downstream{"Chosen Model"}
-        Downstream -->|Option A| GPT4oMini["GPT-4o Mini ($0.00015 / 1k in)"]
-        Downstream -->|Option B| Flash["Gemini 1.5 Flash ($0.000075 / 1k in)"]
-        Downstream -->|Option C| Haiku["Claude 3 Haiku ($0.00025 / 1k in)"]
-        Downstream -->|Option D (Frontier)| GPT4o["GPT-4o / Sonnet 3.5 ($0.0025 / 1k in)"]
+        Dispatcher -->|"5. Dispatches Enhanced Prompt"| Downstream{"Chosen Model"}
+        Downstream -->|"Option A"| GPT4oMini["GPT-4o Mini - $0.00015 per 1k in"]
+        Downstream -->|"Option B"| Flash["Gemini 1.5 Flash - $0.000075 per 1k in"]
+        Downstream -->|"Option C"| Haiku["Claude 3 Haiku - $0.00025 per 1k in"]
+        Downstream -->|"Option D - Frontier"| GPT4o["GPT-4o / Sonnet 3.5 - $0.0025 per 1k in"]
     end
 
     %% Response Delivery
-    GPT4oMini -->|Completion| Dispatcher
-    Flash -->|Completion| Dispatcher
-    Haiku -->|Completion| Dispatcher
-    GPT4o -->|Completion| Dispatcher
+    GPT4oMini -->|"Completion"| Dispatcher
+    Flash -->|"Completion"| Dispatcher
+    Haiku -->|"Completion"| Dispatcher
+    GPT4o -->|"Completion"| Dispatcher
     
-    Dispatcher -->|6. Completion + Cost & Savings Metadata| GW
-    GW -->|7. Response Payload| Client
+    Dispatcher -->|"6. Completion + Cost Metadata"| GW
+    GW -->|"7. Response Payload"| Client
 
     %% Async Feedback & Training Loop
     subgraph FeedbackLoop ["Learning & Auto-Evaluation Loop"]
-        Dispatcher -.->|8. Async Background Task| Judge["⚖️ LLM-as-a-Judge Auto-Evaluator"]
-        Judge -->|9. Score 1.0 - 10.0 & Feedback| DB[("🗄️ SQLite Database (InferenceLogs)")]
-        DB -->|10. Export Dataset JSONL| FineTuning["🎓 Model Fine-Tuning Pipeline"]
+        Dispatcher -.->|"8. Async Background Task"| Judge["LLM-as-a-Judge Auto-Evaluator"]
+        Judge -->|"9. Quality Score 1.0 - 10.0"| DB[("SQLite Database - InferenceLogs")]
+        DB -->|"10. Export Dataset JSONL"| FineTuning["Model Fine-Tuning Pipeline"]
     end
 ```
 

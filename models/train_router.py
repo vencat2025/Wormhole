@@ -1,0 +1,49 @@
+import os
+import json
+import joblib
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.ensemble import GradientBoostingClassifier
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, accuracy_score
+
+DATASET_PATH = "/Users/venkat/Documents/AI/WormHole/data/frontier_benchmark_dataset.json"
+MODEL_OUTPUT_DIR = "/Users/venkat/Documents/AI/WormHole/models"
+MODEL_FILE_PATH = os.path.join(MODEL_OUTPUT_DIR, "router_slm.joblib")
+
+def train_router_slm():
+    if not os.path.exists(DATASET_PATH):
+        raise FileNotFoundError(f"Dataset not found at {DATASET_PATH}. Run scripts/build_benchmark_dataset.py first.")
+
+    with open(DATASET_PATH, "r") as f:
+        dataset = json.load(f)
+
+    X = [item["prompt"] for item in dataset]
+    y = [item["selected_model"] for item in dataset]
+
+    print(f"📊 Dataset size: {len(X)} prompt samples")
+    
+    # Train / Test split
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
+
+    print("⚡ Training Local Router SLM (TF-IDF + Gradient Boosting Classifier)...")
+    pipeline = Pipeline([
+        ("tfidf", TfidfVectorizer(ngram_range=(1, 2), max_features=2500, stop_words="english")),
+        ("classifier", GradientBoostingClassifier(n_estimators=100, learning_rate=0.1, max_depth=5, random_state=42))
+    ])
+
+    pipeline.fit(X_train, y_train)
+
+    # Evaluate
+    y_pred = pipeline.predict(X_test)
+    accuracy = accuracy_score(y_test, y_pred)
+    print(f"\n🎯 Model Accuracy on Test Set: {accuracy * 100:.2f}%\n")
+    print(classification_report(y_test, y_pred))
+
+    # Save model
+    os.makedirs(MODEL_OUTPUT_DIR, exist_ok=True)
+    joblib.dump(pipeline, MODEL_FILE_PATH)
+    print(f"💾 Trained Local Router SLM saved to {MODEL_FILE_PATH}")
+
+if __name__ == "__main__":
+    train_router_slm()

@@ -27,9 +27,20 @@ class Settings:
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
 
-    # Registered Candidate Target Models in Enterprise Fleet
+    # Registered Candidate Target Models in Enterprise Fleet (Cloud + Open-Source Local)
     CANDIDATE_MODELS: List[CandidateModelConfig] = [
+        CandidateModelConfig(
+            id="ollama/llama3.1",
+            name="Llama 3.1 8B (Local)",
+            provider="ollama",
+            input_cost_per_1k=0.0,
+            output_cost_per_1k=0.0,
+            description="Open-source Meta Llama 3.1 8B model running locally on Ollama with $0 API cost.",
+            speed_tier="fast",
+            intelligence_tier="medium"
+        ),
         CandidateModelConfig(
             id="gpt-4o-mini",
             name="GPT-4o Mini",
@@ -39,36 +50,6 @@ class Settings:
             description="Fast, low-cost model ideal for simple to medium reasoning, code generation, summarization, and formatting.",
             speed_tier="fast",
             intelligence_tier="medium"
-        ),
-        CandidateModelConfig(
-            id="gpt-4o",
-            name="GPT-4o",
-            provider="openai",
-            input_cost_per_1k=0.0025,
-            output_cost_per_1k=0.0100,
-            description="Frontier multimodal model for highly complex reasoning, advanced math, and deep architectural code synthesis.",
-            speed_tier="medium",
-            intelligence_tier="frontier"
-        ),
-        CandidateModelConfig(
-            id="claude-3-haiku-20240307",
-            name="Claude 3 Haiku",
-            provider="anthropic",
-            input_cost_per_1k=0.00025,
-            output_cost_per_1k=0.00125,
-            description="Lightweight Anthropic model for rapid responses, text processing, and structured extraction.",
-            speed_tier="fast",
-            intelligence_tier="medium"
-        ),
-        CandidateModelConfig(
-            id="claude-3-5-sonnet-20240620",
-            name="Claude 3.5 Sonnet",
-            provider="anthropic",
-            input_cost_per_1k=0.0030,
-            output_cost_per_1k=0.0150,
-            description="High-tier reasoning and coding model with exceptional code generation capabilities.",
-            speed_tier="medium",
-            intelligence_tier="frontier"
         ),
         CandidateModelConfig(
             id="gemini/gemini-1.5-flash",
@@ -81,6 +62,16 @@ class Settings:
             intelligence_tier="medium"
         ),
         CandidateModelConfig(
+            id="claude-3-haiku-20240307",
+            name="Claude 3 Haiku",
+            provider="anthropic",
+            input_cost_per_1k=0.00025,
+            output_cost_per_1k=0.00125,
+            description="Lightweight Anthropic model for rapid responses, text processing, and structured extraction.",
+            speed_tier="fast",
+            intelligence_tier="medium"
+        ),
+        CandidateModelConfig(
             id="gemini/gemini-1.5-pro",
             name="Gemini 1.5 Pro",
             provider="google",
@@ -89,6 +80,26 @@ class Settings:
             description="High-capacity Google model with 2M token context, suited for deep context search and complex logic.",
             speed_tier="medium",
             intelligence_tier="high"
+        ),
+        CandidateModelConfig(
+            id="gpt-4o",
+            name="GPT-4o",
+            provider="openai",
+            input_cost_per_1k=0.0025,
+            output_cost_per_1k=0.0100,
+            description="Frontier multimodal model for highly complex reasoning, advanced math, and deep architectural code synthesis.",
+            speed_tier="medium",
+            intelligence_tier="frontier"
+        ),
+        CandidateModelConfig(
+            id="claude-3-5-sonnet-20240620",
+            name="Claude 3.5 Sonnet",
+            provider="anthropic",
+            input_cost_per_1k=0.0030,
+            output_cost_per_1k=0.0150,
+            description="High-tier reasoning and coding model with exceptional code generation capabilities.",
+            speed_tier="medium",
+            intelligence_tier="frontier"
         ),
     ]
 

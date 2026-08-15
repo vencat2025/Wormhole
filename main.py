@@ -170,6 +170,18 @@ def export_dataset(target: str = "router", min_score: float = 7.0):
         headers={"Content-Disposition": f'attachment; filename="wormhole_{target}_dataset.jsonl"'}
     )
 
+@app.post("/api/router/retrain")
+def retrain_models_from_feedback():
+    from models.train_router import train_router_slm
+    from models.train_quality_evaluator import train_quality_evaluator_slm
+    
+    try:
+        train_router_slm()
+        train_quality_evaluator_slm()
+        return {"status": "success", "message": "Local Router SLM and Quality Evaluator SLM successfully retrained from latest database completions and judge feedback."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Retraining failed: {str(e)}")
+
 # --- Admin Dashboard UI ---
 @app.get("/", response_class=HTMLResponse)
 def get_dashboard():
@@ -225,6 +237,7 @@ def get_dashboard():
             ⚡ WormHole <span class="badge">Enterprise Gateway</span>
         </div>
         <div>
+            <button onclick="triggerRetrain()" class="export-btn" style="background: rgba(16, 185, 129, 0.2); border-color: var(--green); margin-right: 8px;">🔄 Retrain Local SLMs</button>
             <a href="/api/dataset/export?target=router" class="export-btn">📥 Export Router Dataset (JSONL)</a>
             <a href="/api/dataset/export?target=enhancer" class="export-btn" style="margin-left:8px;">📥 Export Enhancer Dataset (JSONL)</a>
         </div>
@@ -320,6 +333,18 @@ def get_dashboard():
                 `).join('');
             } catch (err) {
                 console.error("Error loading analytics", err);
+            }
+        }
+
+        async function triggerRetrain() {
+            try {
+                alert("⚡ Retraining local SLMs from latest DB completions and judge feedback...");
+                const res = await fetch('/api/router/retrain', { method: 'POST' });
+                const data = await res.json();
+                alert(`✅ Retraining Complete!\n${data.message}`);
+                fetchAnalytics();
+            } catch (err) {
+                alert("❌ Retraining failed: " + err);
             }
         }
 

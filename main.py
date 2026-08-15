@@ -261,9 +261,9 @@ def get_dashboard():
         <thead>
             <tr>
                 <th>ID</th>
-                <th>Original Prompt</th>
-                <th>Selected Target Model</th>
-                <th>Router Reasoning</th>
+                <th>📥 Original Prompt</th>
+                <th>✨ Enhanced Prompt (Model 1 SLM)</th>
+                <th>🎯 Target Model & Reasoning</th>
                 <th>Cost / Savings</th>
                 <th>Judge Score</th>
             </tr>
@@ -297,10 +297,18 @@ def get_dashboard():
                     <tr>
                         <td style="font-family: monospace; font-size: 11px; color: var(--text-sub);">${log.request_id}</td>
                         <td>
-                            <div class="prompt-preview" title="${log.original_prompt.replace(/"/g, '&quot;')}">${log.original_prompt}</div>
+                            <div class="prompt-preview" title="${(log.original_prompt || '').replace(/"/g, '&quot;')}">${log.original_prompt}</div>
                         </td>
-                        <td><span class="tag tag-model">${log.selected_model}</span></td>
-                        <td style="font-size: 12px; color: var(--text-sub); max-width: 250px;">${log.router_reasoning || 'N/A'}</td>
+                        <td>
+                            <details style="font-size: 12px; color: #a5b4fc; cursor: pointer;">
+                                <summary style="font-weight: 500;">View Enhanced Prompt</summary>
+                                <div style="margin-top: 6px; padding: 8px; background: rgba(0,0,0,0.4); border-radius: 6px; white-space: pre-wrap; font-family: monospace; font-size: 11px; color: #e0e7ff; max-width: 320px; max-height: 150px; overflow-y: auto;">${log.enhanced_prompt}</div>
+                            </details>
+                        </td>
+                        <td>
+                            <span class="tag tag-model">${log.selected_model}</span>
+                            <div style="font-size: 11px; color: var(--text-sub); margin-top: 4px; max-width: 220px;">${log.router_reasoning || 'N/A'}</div>
+                        </td>
                         <td>
                             <div style="font-weight: 600;">$${log.actual_cost.toFixed(6)}</div>
                             <div style="font-size: 11px; color: var(--green);">Saved $${log.cost_savings.toFixed(6)}</div>

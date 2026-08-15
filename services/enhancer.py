@@ -3,6 +3,7 @@ import logging
 import joblib
 import litellm
 from config import settings
+from models.slm_structures import LocalEnhancerSLM
 
 logger = logging.getLogger("wormhole.enhancer")
 

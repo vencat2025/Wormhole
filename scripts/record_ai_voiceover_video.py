@@ -18,24 +18,26 @@ PANEL_COLOR = (17, 24, 39)
 BORDER_COLOR = (31, 41, 55)
 
 NARRATION_SCRIPT = (
-    "Welcome to WormHole, an enterprise AI inference middleware gateway designed to cut LLM API costs by over 90 percent without degrading completion quality. "
-    "Unlike standard routers that pass raw prompts to cheap models, WormHole uses a dual local model architecture. "
-    "Model 1 quality-enriches prompts in under 1 millisecond. Model 2 evaluates prompt complexity against frontier LLM benchmarks in under 2 milliseconds and routes tasks to the lowest cost capable model. "
-    "As completions stream back, an asynchronous LLM judge rates quality scores from 1 to 10, exporting datasets for continuous SLM retraining. "
-    "Here on the live Web Dashboard, you can track real-time cost savings, compare original versus enhanced prompts side by side, and trigger online retraining."
+    "Welcome to WormHole, the enterprise AI inference middleware layer designed to cut API costs by over 90 percent, while preserving completion quality. "
+    "Unlike basic routers that forward raw prompts to budget models, WormHole uses a dual local model architecture. "
+    "Model 1 quality enriches user prompts in under 1 millisecond. "
+    "Model 2 evaluates prompt complexity against frontier LLM benchmarks in under 2 milliseconds, and routes tasks to the lowest cost capable model. "
+    "As completions deliver, an asynchronous LLM judge rates quality scores from 1 to 10, exporting datasets for continuous SLM retraining. "
+    "Here on the live Web Dashboard, you can track real-time cost savings, compare original versus enhanced prompts side by side, and trigger online SLM retraining."
 )
 
 def generate_voiceover_audio():
-    print("🎙️ Synthesizing AI Voiceover Audio using macOS Speech Synthesizer...")
+    print("🎙️ Synthesizing High-Fidelity AI Voiceover Audio (44.1kHz Daniel Natural Cadence)...")
     os.makedirs(os.path.dirname(TEMP_AUDIO), exist_ok=True)
-    # Use macOS say command with Samantha or Alex voice to generate WAV audio
-    cmd = ["say", "-v", "Samantha", "-o", TEMP_AUDIO, "--data-format=LEI16@22050", NARRATION_SCRIPT]
+    
+    # Try high-quality Daniel voice at 170 WPM and 44.1kHz audio
+    cmd = ["say", "-v", "Daniel", "-r", "170", "-o", TEMP_AUDIO, "--data-format=LEI16@44100", NARRATION_SCRIPT]
     res = subprocess.run(cmd, capture_output=True, text=True)
     if res.returncode != 0:
-        # Fallback to default voice
-        cmd = ["say", "-o", TEMP_AUDIO, "--data-format=LEI16@22050", NARRATION_SCRIPT]
+        # Fallback to Samantha at 170 WPM
+        cmd = ["say", "-v", "Samantha", "-r", "170", "-o", TEMP_AUDIO, "--data-format=LEI16@44100", NARRATION_SCRIPT]
         subprocess.run(cmd, check=True)
-    print("✅ AI Voiceover audio generated successfully.")
+    print("✅ High-Fidelity AI Voiceover audio generated successfully.")
 
 def draw_header(draw, title="⚡ WORMHOLE - ENTERPRISE AI COST REDUCER DEMO"):
     draw.rectangle([0, 0, WIDTH, 60], fill=PANEL_COLOR)
@@ -146,12 +148,16 @@ def create_frame_dashboard():
 def render_video():
     generate_voiceover_audio()
     
-    # Query audio duration using ffprobe or estimate
-    audio_duration = 32.0  # seconds
+    # Query exact audio duration
+    import soundfile as sf
+    data, samplerate = sf.read(TEMP_AUDIO)
+    audio_duration = float(len(data)) / samplerate
+    print(f"🔊 Generated audio duration: {audio_duration:.2f}s")
+    
     fps = 10
     total_frames = int(audio_duration * fps)
     
-    print(f"🎥 Rendering HD Video Frames ({total_frames} frames @ {fps} FPS)...")
+    print(f"🎥 Rendering High-Fidelity Video Frames ({total_frames} frames @ {fps} FPS)...")
     writer = imageio.get_writer(TEMP_VIDEO, fps=fps)
     
     title_f = create_frame_title()
@@ -160,7 +166,6 @@ def render_video():
     dash_f = create_frame_dashboard()
     
     f_per_scene = total_frames // 4
-    
     import numpy as np
 
     for _ in range(f_per_scene):
@@ -174,23 +179,24 @@ def render_video():
         
     writer.close()
     
-    # Merge audio and video into final MP4 using ffmpeg via imageio_ffmpeg
     import imageio_ffmpeg
     ffmpeg_exe = imageio_ffmpeg.get_ffmpeg_exe()
     
-    print("🎬 Merging AI Voiceover Audio with Video into final MP4...")
+    print("🎬 Merging High-Fidelity AI Voiceover Audio (192kbps AAC) with Video into final MP4...")
     merge_cmd = [
         ffmpeg_exe, "-y",
         "-i", TEMP_VIDEO,
         "-i", TEMP_AUDIO,
         "-c:v", "libx264",
         "-c:a", "aac",
+        "-b:a", "192k",
+        "-ar", "44100",
         "-shortest",
         OUTPUT_MP4
     ]
     subprocess.run(merge_cmd, check=True)
     
-    print(f"🎉 Final AI Voiceover Video successfully created at: {OUTPUT_MP4}")
+    print(f"🎉 High-Fidelity AI Voiceover Video successfully created at: {OUTPUT_MP4}")
 
 if __name__ == "__main__":
     render_video()

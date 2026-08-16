@@ -282,7 +282,7 @@ async def dispatch_responses_streaming_inference(
             "type": "message",
             "role": "assistant",
             "status": "in_progress",
-            "content": []
+            "content": [{"type": "text", "text": ""}]
         }
     }
     yield f"event: response.output_item.added\ndata: {json.dumps(event_item)}\n\n"

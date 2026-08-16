@@ -71,10 +71,15 @@ async def dispatch_inference(
     completion_text = ""
 
     try:
+        extra_kwargs = {}
+        if active_model.startswith("ollama/"):
+            extra_kwargs["api_base"] = "http://127.0.0.1:11434"
+
         response = await litellm.acompletion(
             model=active_model,
             messages=messages_to_send,
-            temperature=0.7
+            temperature=0.7,
+            **extra_kwargs
         )
         latency_ms = round((time.time() - start_time) * 1000, 2)
         record_provider_success(active_model)
@@ -211,11 +216,16 @@ async def dispatch_streaming_inference(
 
     full_completion = ""
     try:
+        extra_kwargs = {}
+        if selected_model.startswith("ollama/"):
+            extra_kwargs["api_base"] = "http://127.0.0.1:11434"
+
         response_stream = await litellm.acompletion(
             model=selected_model,
             messages=messages_to_send,
             temperature=0.7,
-            stream=True
+            stream=True,
+            **extra_kwargs
         )
         async for chunk in response_stream:
             if chunk.choices and len(chunk.choices) > 0:
@@ -375,10 +385,15 @@ async def dispatch_responses_streaming_inference(
 
     full_completion = ""
     try:
+        extra_kwargs = {}
+        if selected_model.startswith("ollama/"):
+            extra_kwargs["api_base"] = "http://127.0.0.1:11434"
+
         response = await litellm.acompletion(
             model=selected_model,
             messages=messages_to_send,
-            temperature=0.7
+            temperature=0.7,
+            **extra_kwargs
         )
         choice = response.choices[0]
         full_completion = choice.message.content or ""

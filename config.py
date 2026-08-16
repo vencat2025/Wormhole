@@ -42,12 +42,12 @@ class Settings:
     # Registered Candidate Target Models in Enterprise Fleet (Cloud + Open-Source Local)
     CANDIDATE_MODELS: List[CandidateModelConfig] = [
         CandidateModelConfig(
-            id="ollama/llama3.1",
-            name="Llama 3.1 8B (Local)",
+            id="ollama/qwen2.5-coder:7b",
+            name="Qwen 2.5 Coder 7B (Local)",
             provider="ollama",
             input_cost_per_1k=0.0,
             output_cost_per_1k=0.0,
-            description="Open-source Meta Llama 3.1 8B model running locally on Ollama with $0 API cost.",
+            description="Open-source Qwen 2.5 Coder 7B model running locally on Ollama with 100% free $0 API cost.",
             speed_tier="fast",
             intelligence_tier="medium"
         ),

@@ -29,6 +29,16 @@ class Settings:
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
 
+    # Enterprise Security & Auth Settings
+    ENABLE_AUTH: bool = os.getenv("ENABLE_AUTH", "false").lower() in ("true", "1", "yes")
+    VALID_API_KEYS: List[str] = [
+        os.getenv("WORMHOLE_API_KEY", "wh_live_demo123456789"),
+        "wh_live_enterprise_default_key"
+    ]
+
+    # Circuit Breaker & Failover Settings
+    CIRCUIT_BREAKER_THRESHOLD: int = 3  # Max consecutive failures before bypassing provider
+
     # Registered Candidate Target Models in Enterprise Fleet (Cloud + Open-Source Local)
     CANDIDATE_MODELS: List[CandidateModelConfig] = [
         CandidateModelConfig(

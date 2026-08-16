@@ -1,9 +1,12 @@
 import asyncio
 import time
+import json
 import logging
 from typing import List, Dict, Any, Optional
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends, Response
-from fastapi.responses import HTMLResponse, PlainTextResponse
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends, Security, Response
+from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select, func
@@ -13,9 +16,10 @@ from db.database import init_db, engine
 from db.models import InferenceLog
 from services.enhancer import enhance_prompt
 from services.router import route_prompt
-from services.dispatcher import dispatch_inference
+from services.dispatcher import dispatch_inference, dispatch_streaming_inference
 from services.judge import evaluate_completion
 from services.dataset import export_dataset_jsonl
+from services.auth import verify_api_key
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -58,7 +62,11 @@ class ChatCompletionRequest(BaseModel):
 
 # --- Core Gateway Endpoint ---
 @app.post("/v1/chat/completions")
-async def chat_completions(request: ChatCompletionRequest, background_tasks: BackgroundTasks):
+async def chat_completions(
+    request: ChatCompletionRequest,
+    background_tasks: BackgroundTasks,
+    auth_token: str = Depends(verify_api_key)
+):
     if not request.messages:
         raise HTTPException(status_code=400, detail="Messages array cannot be empty.")
     
@@ -73,7 +81,6 @@ async def chat_completions(request: ChatCompletionRequest, background_tasks: Bac
     selected_model, router_reasoning = await route_prompt(original_prompt)
 
     # Step 2: Selective Prompt Enhancement (Model 1)
-    # Frontier models (e.g., gpt-4o, claude-3-5-sonnet, gemini-1.5-pro) do not require prompt enhancement.
     is_frontier = any(f in selected_model.lower() for f in ["gpt-4o", "sonnet", "gemini-1.5-pro"]) and not "mini" in selected_model.lower()
     
     if is_frontier:
@@ -83,8 +90,24 @@ async def chat_completions(request: ChatCompletionRequest, background_tasks: Bac
         enhanced_prompt = await enhance_prompt(original_prompt)
         router_reasoning += " | Selective Prompt Enhancement Applied (Quality boost for budget model)"
 
-    # Step 3: Execution Dispatcher & Cost Metric Computation
     raw_messages = [{"role": m.role, "content": m.content} for m in request.messages]
+
+    # Handle SSE token streaming if stream=True
+    if request.stream:
+        return StreamingResponse(
+            dispatch_streaming_inference(
+                original_prompt=original_prompt,
+                enhanced_prompt=enhanced_prompt,
+                enhancer_model=settings.ENHANCER_MODEL if not is_frontier else "bypassed",
+                router_model=settings.ROUTER_MODEL,
+                selected_model=selected_model,
+                router_reasoning=router_reasoning,
+                original_messages=raw_messages
+            ),
+            media_type="text/event-stream"
+        )
+
+    # Step 3: Execution Dispatcher & Cost Metric Computation (Synchronous JSON)
     result = await dispatch_inference(
         original_prompt=original_prompt,
         enhanced_prompt=enhanced_prompt,

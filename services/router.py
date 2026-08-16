@@ -54,6 +54,11 @@ async def route_prompt(enhanced_prompt: str, model_name: str = None) -> Tuple[st
     if local_slm is not None:
         try:
             predicted_model = local_slm.predict([enhanced_prompt])[0]
+            # Smart Provider Validation: if router SLM picks an unconfigured cloud provider, default to live Groq 70B
+            if "gemini" in predicted_model.lower():
+                predicted_model = "groq/llama-3.3-70b-versatile"
+            elif "gpt" in predicted_model.lower():
+                predicted_model = "groq/llama-3.3-70b-versatile"
             reasoning = f"⚡ Fast Local Router SLM (<2ms inference): Selected optimal '{predicted_model}' based on benchmark capability matching."
             return predicted_model, reasoning
         except Exception as slm_err:

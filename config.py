@@ -18,15 +18,16 @@ class Settings:
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./wormhole.db")
 
     # Default LLM configuration for the intermediate layer
-    ENHANCER_MODEL: str = os.getenv("ENHANCER_MODEL", "gpt-4o-mini")
-    ROUTER_MODEL: str = os.getenv("ROUTER_MODEL", "gpt-4o-mini")
-    JUDGE_MODEL: str = os.getenv("JUDGE_MODEL", "gpt-4o-mini")
-    FALLBACK_MODEL: str = os.getenv("FALLBACK_MODEL", "gpt-4o-mini")
+    ENHANCER_MODEL: str = os.getenv("ENHANCER_MODEL", "groq/llama-3.3-70b-versatile")
+    ROUTER_MODEL: str = os.getenv("ROUTER_MODEL", "groq/llama-3.3-70b-versatile")
+    JUDGE_MODEL: str = os.getenv("JUDGE_MODEL", "groq/llama-3.3-70b-versatile")
+    FALLBACK_MODEL: str = os.getenv("FALLBACK_MODEL", "groq/llama-3.3-70b-versatile")
 
     # Default API Keys
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
 
     # Enterprise Security & Auth Settings
@@ -41,6 +42,16 @@ class Settings:
 
     # Registered Candidate Target Models in Enterprise Fleet (Cloud + Open-Source Local)
     CANDIDATE_MODELS: List[CandidateModelConfig] = [
+        CandidateModelConfig(
+            id="groq/llama-3.3-70b-versatile",
+            name="Llama 3.3 70B (Groq Cloud)",
+            provider="groq",
+            input_cost_per_1k=0.00059,
+            output_cost_per_1k=0.00079,
+            description="Ultra fast 70B cloud model hosted on Groq LPU hardware with high intelligence and zero latency.",
+            speed_tier="fast",
+            intelligence_tier="high"
+        ),
         CandidateModelConfig(
             id="ollama/qwen2.5-coder:7b",
             name="Qwen 2.5 Coder 7B (Local)",

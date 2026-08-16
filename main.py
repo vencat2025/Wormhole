@@ -595,6 +595,21 @@ def get_dashboard():
                 .replace(/'/g, '&#039;');
         }
 
+        function formatLocalDate(isoStr) {
+            if (!isoStr) return 'N/A';
+            let str = String(isoStr);
+            if (!str.endsWith('Z') && !str.includes('+') && !str.includes('Z')) {
+                str += 'Z';
+            }
+            const d = new Date(str);
+            if (isNaN(d.getTime())) return 'N/A';
+            return d.toLocaleString(undefined, {
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit',
+                hour12: true
+            });
+        }
+
         async function fetchAnalytics() {
             try {
                 const res = await fetch('/api/logs');
@@ -620,10 +635,7 @@ def get_dashboard():
                     const selModel = escapeHtml(log.selected_model || '');
                     const reason = escapeHtml(log.router_reasoning || 'N/A');
                     const reqId = escapeHtml(log.request_id || '');
-                    const dateStr = log.created_at ? new Date(log.created_at).toLocaleString([], {
-                        year: 'numeric', month: '2-digit', day: '2-digit',
-                        hour: '2-digit', minute: '2-digit', second: '2-digit'
-                    }) : 'N/A';
+                    const dateStr = formatLocalDate(log.created_at);
                     return `
                     <tr>
                         <td style="font-family: monospace; font-size: 11px; color: var(--text-sub);">${reqId}</td>

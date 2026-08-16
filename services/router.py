@@ -100,8 +100,8 @@ async def route_prompt(enhanced_prompt: str, model_name: str = None) -> Tuple[st
             selected_model = "gpt-4o"
             reasoning = "Routed to gpt-4o due to detected high-complexity reasoning keywords."
         elif prompt_len > 3000:
-            selected_model = "gemini/gemini-1.5-flash"
-            reasoning = "Routed to Gemini 1.5 Flash due to long context and ultra-low token cost."
+            selected_model = "gemini/gemini-2.5-flash"
+            reasoning = "Routed to Gemini 2.5 Flash due to long context and ultra-low token cost."
         else:
             selected_model = "gpt-4o-mini"
             reasoning = "Routed to GPT-4o Mini as low-cost model suitable for standard task complexity."

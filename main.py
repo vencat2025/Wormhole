@@ -2,7 +2,7 @@ import asyncio
 import time
 import json
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Depends, Security, Response
@@ -55,7 +55,7 @@ app.add_middleware(
 # --- Models for OpenAI API Spec ---
 class ChatMessage(BaseModel):
     role: str
-    content: str
+    content: Optional[Union[str, List[Any], Dict[str, Any]]] = ""
 
 class ChatCompletionRequest(BaseModel):
     model: Optional[str] = "wormhole-auto"  # Default routing keyword
@@ -63,6 +63,9 @@ class ChatCompletionRequest(BaseModel):
     temperature: Optional[float] = 0.7
     top_p: Optional[float] = 1.0
     stream: Optional[bool] = False
+
+ChatMessage.model_rebuild()
+ChatCompletionRequest.model_rebuild()
 
 def extract_clean_text(content_obj: Any) -> str:
     if isinstance(content_obj, str):
@@ -581,6 +584,16 @@ def get_dashboard():
     </table>
 
     <script>
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
         async function fetchAnalytics() {
             try {
                 const res = await fetch('/api/logs');
@@ -600,21 +613,27 @@ def get_dashboard():
                     return;
                 }
 
-                tbody.innerHTML = data.logs.map(log => `
+                tbody.innerHTML = data.logs.map(log => {
+                    const origPrompt = escapeHtml(log.original_prompt || '');
+                    const enhPrompt = escapeHtml(log.enhanced_prompt || '');
+                    const selModel = escapeHtml(log.selected_model || '');
+                    const reason = escapeHtml(log.router_reasoning || 'N/A');
+                    const reqId = escapeHtml(log.request_id || '');
+                    return `
                     <tr>
-                        <td style="font-family: monospace; font-size: 11px; color: var(--text-sub);">${log.request_id}</td>
+                        <td style="font-family: monospace; font-size: 11px; color: var(--text-sub);">${reqId}</td>
                         <td>
-                            <div class="prompt-preview" title="${(log.original_prompt || '').replace(/"/g, '&quot;')}">${log.original_prompt}</div>
+                            <div class="prompt-preview" title="${origPrompt}">${origPrompt}</div>
                         </td>
                         <td>
                             <details style="font-size: 12px; color: #a5b4fc; cursor: pointer;">
                                 <summary style="font-weight: 500;">View Enhanced Prompt</summary>
-                                <div style="margin-top: 6px; padding: 8px; background: rgba(0,0,0,0.4); border-radius: 6px; white-space: pre-wrap; font-family: monospace; font-size: 11px; color: #e0e7ff; max-width: 320px; max-height: 150px; overflow-y: auto;">${log.enhanced_prompt}</div>
+                                <div style="margin-top: 6px; padding: 8px; background: rgba(0,0,0,0.4); border-radius: 6px; white-space: pre-wrap; font-family: monospace; font-size: 11px; color: #e0e7ff; max-width: 320px; max-height: 150px; overflow-y: auto;">${enhPrompt}</div>
                             </details>
                         </td>
                         <td>
-                            <span class="tag tag-model">${log.selected_model}</span>
-                            <div style="font-size: 11px; color: var(--text-sub); margin-top: 4px; max-width: 220px;">${log.router_reasoning || 'N/A'}</div>
+                            <span class="tag tag-model">${selModel}</span>
+                            <div style="font-size: 11px; color: var(--text-sub); margin-top: 4px; max-width: 220px;">${reason}</div>
                         </td>
                         <td>
                             <div style="font-weight: 600;">$${log.actual_cost.toFixed(6)}</div>
@@ -624,7 +643,8 @@ def get_dashboard():
                             ${log.judge_score !== null ? `<span class="tag tag-score">★ ${log.judge_score.toFixed(1)}/10</span>` : '<span style="color:var(--text-sub); font-size:11px;">Pending...</span>'}
                         </td>
                     </tr>
-                `).join('');
+                `;
+                }).join('');
             } catch (err) {
                 console.error("Error loading analytics", err);
             }

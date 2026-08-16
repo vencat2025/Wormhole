@@ -1,3 +1,4 @@
+import secrets
 from fastapi import Security, HTTPException, status
 from fastapi.security.api_key import APIKeyHeader
 from config import settings
@@ -22,8 +23,9 @@ async def verify_api_key(api_key_header_val: str = Security(api_key_header)):
     # Strip 'Bearer ' prefix if present
     token = api_key_header_val.replace("Bearer ", "").replace("bearer ", "").strip()
 
-    if token in settings.VALID_API_KEYS or token.startswith("wh_live_"):
-        return token
+    for valid_key in settings.VALID_API_KEYS:
+        if secrets.compare_digest(token, valid_key):
+            return token
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

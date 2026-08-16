@@ -121,6 +121,16 @@ For detailed feature comparison matrices, technological moats, and enterprise TC
 
 ---
 
+## 🛠️ Custom AI Harness Integration (Claude Code, Cursor, Codex, Aider)
+
+WormHole acts as a seamless drop-in replacement proxy for all custom developer coding harnesses and AI tools. For complete step-by-step setup guides, see **[HARNESS_INTEGRATION_GUIDE.md](HARNESS_INTEGRATION_GUIDE.md)**.
+
+- **Claude Code CLI**: `export ANTHROPIC_BASE_URL="http://127.0.0.1:8000/v1"`
+- **Cursor IDE / VS Code**: Set `OpenAI Base URL` to `http://127.0.0.1:8000/v1`
+- **Aider CLI / Continue.dev**: Point API base to `http://127.0.0.1:8000/v1`
+
+---
+
 ## 🔌 API Endpoints & Interfaces
 
 ### 1. OpenAI-Compatible Chat Proxy

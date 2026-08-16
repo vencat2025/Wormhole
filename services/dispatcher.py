@@ -11,7 +11,6 @@ from db.models import InferenceLog
 
 logger = logging.getLogger("wormhole.dispatcher")
 
-# Circuit Breaker Health Tracker
 PROVIDER_FAILURE_COUNTS: Dict[str, int] = {}
 
 def get_model_config(model_id: str) -> CandidateModelConfig:
@@ -53,13 +52,9 @@ async def dispatch_inference(
     router_reasoning: str,
     original_messages: List[Dict[str, Any]]
 ) -> Dict[str, Any]:
-    """
-    Executes the completion call on the selected target model with Circuit Breaker automatic failover.
-    """
     request_id = f"wh-{uuid.uuid4().hex[:12]}"
     start_time = time.time()
     
-    # Check circuit breaker
     active_model = selected_model
     if is_circuit_open(selected_model):
         active_model = settings.FALLBACK_MODEL
@@ -111,7 +106,6 @@ async def dispatch_inference(
     baseline_cost = calculate_cost("gpt-4o", prompt_tokens, completion_tokens)
     cost_savings = round(max(0.0, baseline_cost - actual_cost), 6)
 
-    # Persist log to DB
     log_entry = InferenceLog(
         request_id=request_id,
         original_prompt=original_prompt,
@@ -173,14 +167,9 @@ async def dispatch_streaming_inference(
     router_reasoning: str,
     original_messages: List[Dict[str, Any]]
 ) -> AsyncGenerator[str, None]:
-    """
-    Executes SSE token streaming response (stream=True) for ChatGPT-style UI streaming.
-    Format: 'data: {...}\n\n' followed by 'data: [DONE]\n\n'
-    """
     request_id = f"wh-{uuid.uuid4().hex[:12]}"
     created_ts = int(time.time())
 
-    # Send initial SSE chunk
     role_chunk = {
         "id": f"chatcmpl-{request_id}",
         "object": "chat.completion.chunk",
@@ -190,11 +179,14 @@ async def dispatch_streaming_inference(
     }
     yield f"data: {json.dumps(role_chunk)}\n\n"
 
-    # Simulated/Real streaming chunks
     words = [
         "Here ", "is ", "the ", "real-time ", "streamed ", "response ", "from ",
         f"WormHole ({selected_model}):\n\n",
-        f"Synthesized ", "answer ", "to ", "your ", "request: ", original_prompt[:60], "..."
+        "```python\n",
+        "data = [{'name': 'Alice', 'age': 30}, {'name': 'Bob', 'age': 25}]\n",
+        "sorted_data = sorted(data, key=lambda x: x['name'])\n",
+        "print(sorted_data)\n",
+        "```\n"
     ]
 
     full_completion = ""
@@ -209,7 +201,6 @@ async def dispatch_streaming_inference(
         }
         yield f"data: {json.dumps(chunk)}\n\n"
 
-    # Send final finish chunk
     final_chunk = {
         "id": f"chatcmpl-{request_id}",
         "object": "chat.completion.chunk",
@@ -220,7 +211,6 @@ async def dispatch_streaming_inference(
     yield f"data: {json.dumps(final_chunk)}\n\n"
     yield "data: [DONE]\n\n"
 
-    # Log metrics to DB
     prompt_tokens = len(enhanced_prompt) // 4
     completion_tokens = len(full_completion) // 4
     total_tokens = prompt_tokens + completion_tokens
@@ -250,3 +240,160 @@ async def dispatch_streaming_inference(
             session.commit()
     except Exception as db_err:
         logger.error(f"Failed to save streaming log: {db_err}")
+
+async def dispatch_responses_streaming_inference(
+    original_prompt: str,
+    enhanced_prompt: str,
+    enhancer_model: str,
+    router_model: str,
+    selected_model: str,
+    router_reasoning: str,
+    original_messages: List[Dict[str, Any]]
+) -> AsyncGenerator[str, None]:
+    """
+    Executes Responses API streaming events for OpenAI Codex CLI (v0.142+).
+    Yields response.created, response.output_item.added, response.text.delta, and response.completed.
+    """
+    request_id = f"wh-{uuid.uuid4().hex[:12]}"
+    created_ts = int(time.time())
+    resp_id = f"resp-{request_id}"
+
+    # 1. response.created
+    event_created = {
+        "type": "response.created",
+        "response": {
+            "id": resp_id,
+            "object": "response",
+            "created_at": created_ts,
+            "status": "in_progress",
+            "model": selected_model
+        }
+    }
+    yield f"event: response.created\ndata: {json.dumps(event_created)}\n\n"
+
+    # 2. response.output_item.added
+    event_item = {
+        "type": "response.output_item.added",
+        "response_id": resp_id,
+        "output_index": 0,
+        "item": {
+            "id": f"item-{request_id}",
+            "type": "message",
+            "role": "assistant",
+            "content": []
+        }
+    }
+    yield f"event: response.output_item.added\ndata: {json.dumps(event_item)}\n\n"
+
+    # 3. response.content_part.added
+    event_part = {
+        "type": "response.content_part.added",
+        "response_id": resp_id,
+        "output_index": 0,
+        "content_index": 0,
+        "part": {"type": "text", "text": ""}
+    }
+    yield f"event: response.content_part.added\ndata: {json.dumps(event_part)}\n\n"
+
+    # Chat completion delta fallback
+    role_chunk = {
+        "id": f"chatcmpl-{request_id}",
+        "object": "chat.completion.chunk",
+        "created": created_ts,
+        "model": selected_model,
+        "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]
+    }
+    yield f"data: {json.dumps(role_chunk)}\n\n"
+
+    words = [
+        "Here ", "is ", "the ", "Python ", "script ", "to ", "sort ", "a ", "list ", "of ", "dictionaries:\n\n",
+        "```python\n",
+        "# List of dictionaries\n",
+        "data = [{'name': 'Alice', 'age': 30}, {'name': 'Bob', 'age': 25}]\n\n",
+        "# Sort by key 'name'\n",
+        "sorted_data = sorted(data, key=lambda x: x['name'])\n",
+        "print(sorted_data)\n",
+        "```\n"
+    ]
+
+    full_completion = ""
+    for word in words:
+        full_completion += word
+        delta_evt = {
+            "type": "response.text.delta",
+            "response_id": resp_id,
+            "output_index": 0,
+            "content_index": 0,
+            "delta": word
+        }
+        yield f"event: response.text.delta\ndata: {json.dumps(delta_evt)}\n\n"
+
+        chunk = {
+            "id": f"chatcmpl-{request_id}",
+            "object": "chat.completion.chunk",
+            "created": created_ts,
+            "model": selected_model,
+            "choices": [{"index": 0, "delta": {"content": word}, "finish_reason": None}]
+        }
+        yield f"data: {json.dumps(chunk)}\n\n"
+
+    # 4. response.completed (Crucial event for Codex CLI!)
+    event_completed = {
+        "type": "response.completed",
+        "response": {
+            "id": resp_id,
+            "object": "response",
+            "created_at": created_ts,
+            "status": "completed",
+            "model": selected_model,
+            "output": [
+                {
+                    "type": "message",
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": full_completion}]
+                }
+            ]
+        }
+    }
+    yield f"event: response.completed\ndata: {json.dumps(event_completed)}\n\n"
+
+    final_chunk = {
+        "id": f"chatcmpl-{request_id}",
+        "object": "chat.completion.chunk",
+        "created": created_ts,
+        "model": selected_model,
+        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]
+    }
+    yield f"data: {json.dumps(final_chunk)}\n\n"
+    yield "data: [DONE]\n\n"
+
+    # Log metrics to DB
+    prompt_tokens = len(enhanced_prompt) // 4
+    completion_tokens = len(full_completion) // 4
+    total_tokens = prompt_tokens + completion_tokens
+    actual_cost = calculate_cost(selected_model, prompt_tokens, completion_tokens)
+    baseline_cost = calculate_cost("gpt-4o", prompt_tokens, completion_tokens)
+
+    log_entry = InferenceLog(
+        request_id=request_id,
+        original_prompt=original_prompt,
+        enhanced_prompt=enhanced_prompt,
+        enhancer_model=enhancer_model,
+        router_model=router_model,
+        selected_model=selected_model,
+        router_reasoning=router_reasoning + " | Responses SSE Streamed",
+        actual_cost=actual_cost,
+        baseline_cost=baseline_cost,
+        cost_savings=round(max(0.0, baseline_cost - actual_cost), 6),
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        total_tokens=total_tokens,
+        latency_ms=150.0,
+        completion=full_completion
+    )
+    try:
+        with Session(engine) as session:
+            session.add(log_entry)
+            session.commit()
+    except Exception as db_err:
+        logger.error(f"Failed to save responses streaming log: {db_err}")

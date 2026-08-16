@@ -16,7 +16,11 @@ from db.database import init_db, engine
 from db.models import InferenceLog
 from services.enhancer import enhance_prompt
 from services.router import route_prompt
-from services.dispatcher import dispatch_inference, dispatch_streaming_inference
+from services.dispatcher import (
+    dispatch_inference,
+    dispatch_streaming_inference,
+    dispatch_responses_streaming_inference
+)
 from services.judge import evaluate_completion
 from services.dataset import export_dataset_jsonl
 from services.auth import verify_api_key
@@ -200,7 +204,22 @@ async def openai_responses_endpoint(
 
     raw_messages = [{"role": "user", "content": enhanced_prompt}]
 
-    # Step 3: Execution Dispatcher
+    # Handle streaming for OpenAI Codex CLI (v0.142+)
+    if raw_request.get("stream", True):
+        return StreamingResponse(
+            dispatch_responses_streaming_inference(
+                original_prompt=original_prompt,
+                enhanced_prompt=enhanced_prompt,
+                enhancer_model=settings.ENHANCER_MODEL if not is_frontier else "bypassed",
+                router_model=settings.ROUTER_MODEL,
+                selected_model=selected_model,
+                router_reasoning=router_reasoning,
+                original_messages=raw_messages
+            ),
+            media_type="text/event-stream"
+        )
+
+    # Step 3: Execution Dispatcher (Synchronous JSON)
     result = await dispatch_inference(
         original_prompt=original_prompt,
         enhanced_prompt=enhanced_prompt,

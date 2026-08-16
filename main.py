@@ -64,6 +64,28 @@ class ChatCompletionRequest(BaseModel):
     top_p: Optional[float] = 1.0
     stream: Optional[bool] = False
 
+def extract_clean_text(content_obj: Any) -> str:
+    if isinstance(content_obj, str):
+        return content_obj
+    if isinstance(content_obj, list):
+        texts = []
+        for item in content_obj:
+            if isinstance(item, str):
+                texts.append(item)
+            elif isinstance(item, dict):
+                if "text" in item:
+                    texts.append(str(item["text"]))
+                elif "content" in item:
+                    texts.append(extract_clean_text(item["content"]))
+        if texts:
+            return " ".join(texts)
+    if isinstance(content_obj, dict):
+        if "text" in content_obj:
+            return str(content_obj["text"])
+        if "content" in content_obj:
+            return extract_clean_text(content_obj["content"])
+    return str(content_obj)
+
 # --- Core Gateway Endpoint ---
 @app.post("/v1/chat/completions")
 async def chat_completions(
@@ -74,12 +96,13 @@ async def chat_completions(
     if not request.messages:
         raise HTTPException(status_code=400, detail="Messages array cannot be empty.")
     
-    # Extract original user prompt from the last user message
     user_messages = [m for m in request.messages if m.role == "user"]
     if not user_messages:
-        original_prompt = request.messages[-1].content
+        raw_prompt = request.messages[-1].content
     else:
-        original_prompt = user_messages[-1].content
+        raw_prompt = user_messages[-1].content
+
+    original_prompt = extract_clean_text(raw_prompt)
 
     # Step 1: Model 2 - Local Router SLM Decision (<2ms)
     selected_model, router_reasoning = await route_prompt(original_prompt)
@@ -181,19 +204,11 @@ async def openai_responses_endpoint(
     original_prompt = "Hello"
     if "input" in raw_request:
         inp = raw_request["input"]
-        if isinstance(inp, str):
-            original_prompt = inp
-        elif isinstance(inp, list) and len(inp) > 0:
-            if isinstance(inp[-1], dict) and "content" in inp[-1]:
-                original_prompt = str(inp[-1]["content"])
-            elif isinstance(inp[-1], dict) and "text" in inp[-1]:
-                original_prompt = str(inp[-1]["text"])
-            else:
-                original_prompt = str(inp[-1])
+        original_prompt = extract_clean_text(inp)
     elif "messages" in raw_request:
         msgs = raw_request["messages"]
         if msgs and len(msgs) > 0:
-            original_prompt = str(msgs[-1].get("content", "Hello"))
+            original_prompt = extract_clean_text(msgs[-1].get("content", "Hello"))
 
     # Step 1: Model 2 - Local Router SLM Decision (<2ms)
     selected_model, router_reasoning = await route_prompt(original_prompt)

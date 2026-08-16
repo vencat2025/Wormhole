@@ -69,18 +69,26 @@ async def chat_completions(request: ChatCompletionRequest, background_tasks: Bac
     else:
         original_prompt = user_messages[-1].content
 
-    # Step 1: Model 1 - Quality Prompt Enhancement
-    enhanced_prompt = await enhance_prompt(original_prompt)
+    # Step 1: Model 2 - Local Router SLM Decision (<2ms)
+    selected_model, router_reasoning = await route_prompt(original_prompt)
 
-    # Step 2: Model 2 - Router Decision
-    selected_model, router_reasoning = await route_prompt(enhanced_prompt)
+    # Step 2: Selective Prompt Enhancement (Model 1)
+    # Frontier models (e.g., gpt-4o, claude-3-5-sonnet, gemini-1.5-pro) do not require prompt enhancement.
+    is_frontier = any(f in selected_model.lower() for f in ["gpt-4o", "sonnet", "gemini-1.5-pro"]) and not "mini" in selected_model.lower()
+    
+    if is_frontier:
+        enhanced_prompt = original_prompt
+        router_reasoning += " | Prompt Enhancement Bypassed (Frontier model selected)"
+    else:
+        enhanced_prompt = await enhance_prompt(original_prompt)
+        router_reasoning += " | Selective Prompt Enhancement Applied (Quality boost for budget model)"
 
     # Step 3: Execution Dispatcher & Cost Metric Computation
     raw_messages = [{"role": m.role, "content": m.content} for m in request.messages]
     result = await dispatch_inference(
         original_prompt=original_prompt,
         enhanced_prompt=enhanced_prompt,
-        enhancer_model=settings.ENHANCER_MODEL,
+        enhancer_model=settings.ENHANCER_MODEL if not is_frontier else "bypassed",
         router_model=settings.ROUTER_MODEL,
         selected_model=selected_model,
         router_reasoning=router_reasoning,

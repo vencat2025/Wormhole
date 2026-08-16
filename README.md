@@ -19,14 +19,16 @@ graph TD
     
     %% Intermediate Layer
     subgraph Intermediate ["WormHole Intermediate Layer"]
-        GW -->|"2. Raw Prompt"| Enhancer["Model 1: Prompt Enhancer LLM - Quality Optimization"]
-        Enhancer -->|"3. Enhanced Prompt"| Router["Model 2: Router LLM - Cost & Capability Analysis"]
-        Router -->|"4. Selected Model & Reasoning"| Dispatcher["Execution Dispatcher & Cost Engine"]
+        GW -->|"2. Raw Prompt"| Router["Model 2: Router SLM (<2ms)"]
+        Router -->|"3. Selected Model & Reasoning"| Decision{"Is Budget/Mid-Tier Model?"}
+        Decision -->|"Yes (Budget/Mid-Tier)"| Enhancer["Model 1: Prompt Enhancer SLM (<1ms Quality Boost)"]
+        Decision -->|"No (Frontier Model)"| Dispatcher["Execution Dispatcher & Cost Engine"]
+        Enhancer -->|"Enhanced Prompt"| Dispatcher
     end
     
     %% Target LLMs Fleet
     subgraph EnterpriseFleet ["Enterprise Candidate Models Fleet"]
-        Dispatcher -->|"5. Dispatches Enhanced Prompt"| Downstream{"Chosen Model"}
+        Dispatcher -->|"4. Dispatches Prompt"| Downstream{"Chosen Model"}
         Downstream -->|"Option A"| GPT4oMini["GPT-4o Mini - $0.00015 per 1k in"]
         Downstream -->|"Option B"| Flash["Gemini 1.5 Flash - $0.000075 per 1k in"]
         Downstream -->|"Option C"| Haiku["Claude 3 Haiku - $0.00025 per 1k in"]
@@ -39,14 +41,14 @@ graph TD
     Haiku -->|"Completion"| Dispatcher
     GPT4o -->|"Completion"| Dispatcher
     
-    Dispatcher -->|"6. Completion + Cost Metadata"| GW
-    GW -->|"7. Response Payload"| Client
+    Dispatcher -->|"5. Completion + Cost Metadata"| GW
+    GW -->|"6. Response Payload"| Client
 
     %% Async Feedback & Training Loop
     subgraph FeedbackLoop ["Learning & Auto-Evaluation Loop"]
-        Dispatcher -.->|"8. Async Background Task"| Judge["LLM-as-a-Judge Auto-Evaluator"]
-        Judge -->|"9. Quality Score 1.0 - 10.0"| DB[("SQLite Database - InferenceLogs")]
-        DB -->|"10. Export Dataset JSONL"| FineTuning["Model Fine-Tuning Pipeline"]
+        Dispatcher -.->|"7. Async Background Task"| Judge["LLM-as-a-Judge Auto-Evaluator"]
+        Judge -->|"8. Quality Score 1.0 - 10.0"| DB[("SQLite Database - InferenceLogs")]
+        DB -->|"9. Export Dataset JSONL"| FineTuning["Model Fine-Tuning Pipeline"]
     end
 ```
 
@@ -57,7 +59,14 @@ graph TD
 ### 1. Request Ingestion (`/v1/chat/completions`)
 Client applications send standard OpenAI-formatted completion payloads. WormHole acts as a drop-in replacement proxy.
 
-### 2. Prompt Enhancer (LLM Model 1)
+### 2. Router Decision (Model 2 Local SLM)
+- **File**: [`services/router.py`](file:///Users/venkat/Documents/AI/WormHole/services/router.py)
+- Evaluates raw prompt complexity in **< 2 milliseconds** against registered enterprise models and benchmark capability profiles.
+
+### 3. Selective Prompt Enhancement (Model 1 Local SLM)
+- **File**: [`services/enhancer.py`](file:///Users/venkat/Documents/AI/WormHole/services/enhancer.py)
+- **If a Frontier Model is selected** (`gpt-4o`, `claude-3-5-sonnet`): Prompt enhancement is **bypassed** to save unnecessary latency and token overhead.
+- **If a Budget/Mid-Tier Model is selected** (`gpt-4o-mini`, `gemini-1.5-flash`, `llama3.1`): Model 1 quality-enriches the prompt in **< 1 millisecond** so the budget model outputs frontier-level completions.
 - **File**: [`services/enhancer.py`](file:///Users/venkat/Documents/AI/WormHole/services/enhancer.py)
 - Takes terse or unformatted user prompts and enriches them with clear instructions, expected output structure, and edge-case handling guidelines.
 - **Goal**: Quality maximization—ensuring that lower-cost downstream models receive sufficient context to output top-tier code/text.

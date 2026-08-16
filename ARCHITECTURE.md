@@ -11,18 +11,22 @@ sequenceDiagram
     autonumber
     actor Client as Client App / Harness
     participant Gateway as FastAPI Gateway
-    participant Enhancer as Model 1: Prompt Enhancer
-    participant Router as Model 2: Router LLM
+    participant Router as Model 2: Router SLM
+    participant Enhancer as Model 1: Prompt Enhancer SLM
     participant Dispatcher as Dispatcher & Cost Engine
     participant Target as Selected Candidate LLM
     participant Judge as LLM-as-a-Judge
     participant DB as SQLite DB
 
     Client->>Gateway: POST /v1/chat/completions - Raw Prompt
-    Gateway->>Enhancer: enhance_prompt - raw_prompt
-    Enhancer-->>Gateway: Enhanced Prompt - Quality Enriched
-    Gateway->>Router: route_prompt - enhanced_prompt
-    Router-->>Gateway: Selected Model ID + Reasoning JSON
+    Gateway->>Router: route_prompt - raw_prompt (<2ms)
+    Router-->>Gateway: Selected Model ID + Reasoning
+    alt Is Budget/Mid-Tier Model
+        Gateway->>Enhancer: enhance_prompt - raw_prompt (<1ms)
+        Enhancer-->>Gateway: Enhanced Prompt - Quality Boosted
+    else Is Frontier Model
+        Gateway->>Gateway: Bypass Prompt Enhancement
+    end
     Gateway->>Dispatcher: dispatch_inference
     Dispatcher->>Target: Call Target Model API via LiteLLM
     Target-->>Dispatcher: Completion Response + Usage Tokens

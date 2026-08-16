@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  wormhole-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wormhole_gateway
+    ports:
+      - "8000:8000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+    restart: unless-stopped

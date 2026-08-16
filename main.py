@@ -571,6 +571,7 @@ def get_dashboard():
         <thead>
             <tr>
                 <th>ID</th>
+                <th>⏰ Timestamp</th>
                 <th>📥 Original Prompt</th>
                 <th>✨ Enhanced Prompt (Model 1 SLM)</th>
                 <th>🎯 Target Model & Reasoning</th>
@@ -579,7 +580,7 @@ def get_dashboard():
             </tr>
         </thead>
         <tbody id="logs-body">
-            <tr><td colspan="6" style="text-align: center; color: var(--text-sub);">Loading inference logs...</td></tr>
+            <tr><td colspan="7" style="text-align: center; color: var(--text-sub);">Loading inference logs...</td></tr>
         </tbody>
     </table>
 
@@ -609,7 +610,7 @@ def get_dashboard():
 
                 const tbody = document.getElementById('logs-body');
                 if (data.logs.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--text-sub);">No requests logged yet. Send chat completion calls to <code>/v1/chat/completions</code>.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-sub);">No requests logged yet. Send chat completion calls to <code>/v1/chat/completions</code>.</td></tr>';
                     return;
                 }
 
@@ -619,9 +620,14 @@ def get_dashboard():
                     const selModel = escapeHtml(log.selected_model || '');
                     const reason = escapeHtml(log.router_reasoning || 'N/A');
                     const reqId = escapeHtml(log.request_id || '');
+                    const dateStr = log.created_at ? new Date(log.created_at).toLocaleString([], {
+                        year: 'numeric', month: '2-digit', day: '2-digit',
+                        hour: '2-digit', minute: '2-digit', second: '2-digit'
+                    }) : 'N/A';
                     return `
                     <tr>
                         <td style="font-family: monospace; font-size: 11px; color: var(--text-sub);">${reqId}</td>
+                        <td style="font-size: 11px; color: #cbd5e1; white-space: nowrap;">${dateStr}</td>
                         <td>
                             <div class="prompt-preview" title="${origPrompt}">${origPrompt}</div>
                         </td>

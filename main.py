@@ -280,14 +280,123 @@ async def openai_responses_endpoint(
 # --- OpenAI-Compatible Models Endpoint ---
 @app.get("/v1/models")
 def list_v1_models():
-    models_list = [
-        {"id": "wormhole-auto", "object": "model", "created": int(time.time()), "owned_by": "wormhole"},
-        {"id": "gpt-5.5", "object": "model", "created": int(time.time()), "owned_by": "wormhole"},
-        {"id": "gpt-4o", "object": "model", "created": int(time.time()), "owned_by": "wormhole"},
-        {"id": "gpt-4o-mini", "object": "model", "created": int(time.time()), "owned_by": "wormhole"},
-        {"id": "claude-3-5-sonnet-20240620", "object": "model", "created": int(time.time()), "owned_by": "wormhole"}
+    reasoning_presets = [
+        {"effort": "none", "description": "No reasoning"},
+        {"effort": "low", "description": "Low reasoning"},
+        {"effort": "medium", "description": "Medium reasoning"},
+        {"effort": "high", "description": "High reasoning"},
+        {"effort": "xhigh", "description": "Extra High reasoning"}
     ]
-    return {"object": "list", "data": models_list}
+    models_list = [
+        {
+            "id": "wormhole-auto",
+            "name": "WormHole Auto Router",
+            "slug": "wormhole-auto",
+            "display_name": "WormHole Auto Router",
+            "description": "Sub-2ms SLM Auto Router & Selective Enhancer",
+            "base_instructions": "You are an expert AI software engineer.",
+            "priority": 0,
+            "truncation_policy": {"mode": "tokens", "limit": 4096},
+            "support_verbosity": False,
+            "supported_in_api": True,
+            "visibility": "list",
+            "shell_type": "default",
+            "object": "model",
+            "created": int(time.time()),
+            "owned_by": "wormhole",
+            "supports_parallel_tool_calls": True,
+            "supports_reasoning_summaries": False,
+            "supports_tools": True,
+            "supports_images": False,
+            "supported_reasoning_levels": reasoning_presets
+        },
+        {
+            "id": "gpt-5.5",
+            "name": "GPT-5.5",
+            "slug": "gpt-5.5",
+            "display_name": "GPT-5.5",
+            "description": "OpenAI GPT-5.5 Agentic Coding Model",
+            "base_instructions": "You are an expert AI software engineer.",
+            "priority": 0,
+            "truncation_policy": {"mode": "tokens", "limit": 4096},
+            "support_verbosity": False,
+            "supported_in_api": True,
+            "visibility": "list",
+            "shell_type": "default",
+            "object": "model",
+            "created": int(time.time()),
+            "owned_by": "wormhole",
+            "supports_parallel_tool_calls": True,
+            "supports_reasoning_summaries": False,
+            "supports_tools": True,
+            "supports_images": False,
+            "supported_reasoning_levels": reasoning_presets
+        },
+        {
+            "id": "gpt-4o",
+            "name": "GPT-4o",
+            "slug": "gpt-4o",
+            "display_name": "GPT-4o",
+            "description": "OpenAI GPT-4o Frontier Model",
+            "base_instructions": "You are an expert AI software engineer.",
+            "priority": 0,
+            "truncation_policy": {"mode": "tokens", "limit": 4096},
+            "support_verbosity": False,
+            "supported_in_api": True,
+            "visibility": "list",
+            "shell_type": "default",
+            "object": "model",
+            "created": int(time.time()),
+            "owned_by": "wormhole",
+            "supports_parallel_tool_calls": True,
+            "supports_reasoning_summaries": False,
+            "supports_tools": True,
+            "supports_images": False,
+            "supported_reasoning_levels": reasoning_presets
+        },
+        {
+            "id": "gpt-4o-mini",
+            "name": "GPT-4o Mini",
+            "slug": "gpt-4o-mini",
+            "display_name": "GPT-4o Mini",
+            "description": "OpenAI GPT-4o-mini Budget Model",
+            "base_instructions": "You are an expert AI software engineer.",
+            "priority": 0,
+            "truncation_policy": {"mode": "tokens", "limit": 4096},
+            "support_verbosity": False,
+            "supported_in_api": True,
+            "visibility": "list",
+            "shell_type": "default",
+            "object": "model",
+            "created": int(time.time()),
+            "owned_by": "wormhole",
+            "supports_reasoning_summaries": False,
+            "supports_tools": True,
+            "supports_images": False,
+            "supported_reasoning_levels": reasoning_presets
+        },
+        {
+            "id": "claude-3-5-sonnet-20240620",
+            "name": "Claude 3.5 Sonnet",
+            "slug": "claude-3-5-sonnet-20240620",
+            "display_name": "Claude 3.5 Sonnet",
+            "description": "Anthropic Claude 3.5 Sonnet",
+            "visibility": "public",
+            "shell_type": "default",
+            "object": "model",
+            "created": int(time.time()),
+            "owned_by": "wormhole",
+            "supports_reasoning_summaries": False,
+            "supports_tools": True,
+            "supports_images": False,
+            "supported_reasoning_levels": reasoning_presets
+        }
+    ]
+    return {
+        "object": "list",
+        "data": models_list,
+        "models": models_list
+    }
 
 # --- Enterprise Admin & Analytics APIs ---
 @app.get("/api/models")

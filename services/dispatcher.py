@@ -337,7 +337,44 @@ async def dispatch_responses_streaming_inference(
         }
         yield f"data: {json.dumps(chunk)}\n\n"
 
-    # 4. response.completed (Crucial event for Codex CLI!)
+    item_id = f"item-{request_id}"
+
+    # 4. response.text.done
+    event_text_done = {
+        "type": "response.text.done",
+        "response_id": resp_id,
+        "output_index": 0,
+        "content_index": 0,
+        "text": full_completion
+    }
+    yield f"event: response.text.done\ndata: {json.dumps(event_text_done)}\n\n"
+
+    # 5. response.content_part.done
+    event_part_done = {
+        "type": "response.content_part.done",
+        "response_id": resp_id,
+        "output_index": 0,
+        "content_index": 0,
+        "part": {"type": "text", "text": full_completion}
+    }
+    yield f"event: response.content_part.done\ndata: {json.dumps(event_part_done)}\n\n"
+
+    # 6. response.output_item.done
+    event_item_done = {
+        "type": "response.output_item.done",
+        "response_id": resp_id,
+        "output_index": 0,
+        "item": {
+            "id": item_id,
+            "type": "message",
+            "role": "assistant",
+            "status": "completed",
+            "content": [{"type": "text", "text": full_completion}]
+        }
+    }
+    yield f"event: response.output_item.done\ndata: {json.dumps(event_item_done)}\n\n"
+
+    # 7. response.completed (Crucial event for Codex CLI!)
     event_completed = {
         "type": "response.completed",
         "response": {
@@ -348,8 +385,10 @@ async def dispatch_responses_streaming_inference(
             "model": selected_model,
             "output": [
                 {
+                    "id": item_id,
                     "type": "message",
                     "role": "assistant",
+                    "status": "completed",
                     "content": [{"type": "text", "text": full_completion}]
                 }
             ]

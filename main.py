@@ -597,8 +597,9 @@ def get_dashboard():
 
         function formatLocalDate(isoStr) {
             if (!isoStr) return 'N/A';
-            let str = String(isoStr);
-            if (!str.endsWith('Z') && !str.includes('+') && !str.includes('Z')) {
+            let str = String(isoStr).trim();
+            const hasTimezone = str.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(str);
+            if (!hasTimezone) {
                 str += 'Z';
             }
             const d = new Date(str);

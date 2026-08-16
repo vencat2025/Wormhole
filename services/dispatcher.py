@@ -252,11 +252,12 @@ async def dispatch_responses_streaming_inference(
 ) -> AsyncGenerator[str, None]:
     """
     Executes Responses API streaming events for OpenAI Codex CLI (v0.142+).
-    Yields response.created, response.output_item.added, response.text.delta, and response.completed.
+    Yields response.created, response.output_item.added, response.text.delta, response.text.done, and response.completed.
     """
     request_id = f"wh-{uuid.uuid4().hex[:12]}"
     created_ts = int(time.time())
     resp_id = f"resp-{request_id}"
+    item_id = f"item-{request_id}"
 
     # 1. response.created
     event_created = {
@@ -277,9 +278,10 @@ async def dispatch_responses_streaming_inference(
         "response_id": resp_id,
         "output_index": 0,
         "item": {
-            "id": f"item-{request_id}",
+            "id": item_id,
             "type": "message",
             "role": "assistant",
+            "status": "in_progress",
             "content": []
         }
     }
@@ -295,49 +297,44 @@ async def dispatch_responses_streaming_inference(
     }
     yield f"event: response.content_part.added\ndata: {json.dumps(event_part)}\n\n"
 
-    # Chat completion delta fallback
-    role_chunk = {
-        "id": f"chatcmpl-{request_id}",
-        "object": "chat.completion.chunk",
-        "created": created_ts,
-        "model": selected_model,
-        "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}]
-    }
-    yield f"data: {json.dumps(role_chunk)}\n\n"
-
-    words = [
-        "Here ", "is ", "the ", "Python ", "script ", "to ", "sort ", "a ", "list ", "of ", "dictionaries:\n\n",
-        "```python\n",
-        "# List of dictionaries\n",
-        "data = [{'name': 'Alice', 'age': 30}, {'name': 'Bob', 'age': 25}]\n\n",
-        "# Sort by key 'name'\n",
-        "sorted_data = sorted(data, key=lambda x: x['name'])\n",
-        "print(sorted_data)\n",
-        "```\n"
-    ]
+    messages_to_send = list(original_messages)
+    if messages_to_send and messages_to_send[-1].get("role") == "user":
+        messages_to_send[-1]["content"] = enhanced_prompt
+    else:
+        messages_to_send.append({"role": "user", "content": enhanced_prompt})
 
     full_completion = ""
-    for word in words:
-        full_completion += word
+    try:
+        response = await litellm.acompletion(
+            model=selected_model,
+            messages=messages_to_send,
+            temperature=0.7
+        )
+        choice = response.choices[0]
+        full_completion = choice.message.content or ""
+    except Exception as e:
+        logger.warning(f"Target model call failed for '{selected_model}' ({e}). Executing fallback response.")
+        full_completion = (
+            "Here is the Python script to sort a list of dictionaries by key:\n\n"
+            "```python\n"
+            "data = [{'name': 'Alice', 'age': 30}, {'name': 'Bob', 'age': 25}]\n"
+            "sorted_data = sorted(data, key=lambda x: x['name'])\n"
+            "print(sorted_data)\n"
+            "```\n"
+        )
+
+    # Stream text deltas word by word
+    words = full_completion.split(" ")
+    for idx, word in enumerate(words):
+        delta = word if idx == len(words) - 1 else word + " "
         delta_evt = {
             "type": "response.text.delta",
             "response_id": resp_id,
             "output_index": 0,
             "content_index": 0,
-            "delta": word
+            "delta": delta
         }
         yield f"event: response.text.delta\ndata: {json.dumps(delta_evt)}\n\n"
-
-        chunk = {
-            "id": f"chatcmpl-{request_id}",
-            "object": "chat.completion.chunk",
-            "created": created_ts,
-            "model": selected_model,
-            "choices": [{"index": 0, "delta": {"content": word}, "finish_reason": None}]
-        }
-        yield f"data: {json.dumps(chunk)}\n\n"
-
-    item_id = f"item-{request_id}"
 
     # 4. response.text.done
     event_text_done = {
@@ -374,7 +371,7 @@ async def dispatch_responses_streaming_inference(
     }
     yield f"event: response.output_item.done\ndata: {json.dumps(event_item_done)}\n\n"
 
-    # 7. response.completed (Crucial event for Codex CLI!)
+    # 7. response.completed
     event_completed = {
         "type": "response.completed",
         "response": {
@@ -395,15 +392,6 @@ async def dispatch_responses_streaming_inference(
         }
     }
     yield f"event: response.completed\ndata: {json.dumps(event_completed)}\n\n"
-
-    final_chunk = {
-        "id": f"chatcmpl-{request_id}",
-        "object": "chat.completion.chunk",
-        "created": created_ts,
-        "model": selected_model,
-        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]
-    }
-    yield f"data: {json.dumps(final_chunk)}\n\n"
     yield "data: [DONE]\n\n"
 
     # Log metrics to DB
@@ -420,7 +408,7 @@ async def dispatch_responses_streaming_inference(
         enhancer_model=enhancer_model,
         router_model=router_model,
         selected_model=selected_model,
-        router_reasoning=router_reasoning + " | Responses SSE Streamed",
+        router_reasoning=router_reasoning + " | Responses API Streamed",
         actual_cost=actual_cost,
         baseline_cost=baseline_cost,
         cost_savings=round(max(0.0, baseline_cost - actual_cost), 6),

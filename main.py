@@ -315,7 +315,7 @@ def list_v1_models():
             "created": int(time.time()),
             "owned_by": "wormhole",
             "supports_parallel_tool_calls": True,
-            "supports_reasoning_summaries": False,
+            "supports_reasoning_summaries": True,
             "supports_tools": True,
             "supports_images": False,
             "supported_reasoning_levels": reasoning_presets
@@ -337,7 +337,7 @@ def list_v1_models():
             "created": int(time.time()),
             "owned_by": "wormhole",
             "supports_parallel_tool_calls": True,
-            "supports_reasoning_summaries": False,
+            "supports_reasoning_summaries": True,
             "supports_tools": True,
             "supports_images": False,
             "supported_reasoning_levels": reasoning_presets

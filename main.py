@@ -162,6 +162,114 @@ async def chat_completions(
     
     return response_payload
 
+# --- OpenAI Responses API Endpoint (For Codex CLI & Agentic Tools) ---
+@app.post("/v1/responses")
+async def openai_responses_endpoint(
+    raw_request: Dict[str, Any],
+    background_tasks: BackgroundTasks,
+    auth_token: str = Depends(verify_api_key)
+):
+    original_prompt = "Hello"
+    if "input" in raw_request:
+        inp = raw_request["input"]
+        if isinstance(inp, str):
+            original_prompt = inp
+        elif isinstance(inp, list) and len(inp) > 0:
+            if isinstance(inp[-1], dict) and "content" in inp[-1]:
+                original_prompt = str(inp[-1]["content"])
+            elif isinstance(inp[-1], dict) and "text" in inp[-1]:
+                original_prompt = str(inp[-1]["text"])
+            else:
+                original_prompt = str(inp[-1])
+    elif "messages" in raw_request:
+        msgs = raw_request["messages"]
+        if msgs and len(msgs) > 0:
+            original_prompt = str(msgs[-1].get("content", "Hello"))
+
+    # Step 1: Model 2 - Local Router SLM Decision (<2ms)
+    selected_model, router_reasoning = await route_prompt(original_prompt)
+
+    # Step 2: Selective Prompt Enhancement (Model 1)
+    is_frontier = any(f in selected_model.lower() for f in ["gpt-4o", "sonnet", "gemini-1.5-pro"]) and not "mini" in selected_model.lower()
+    if is_frontier:
+        enhanced_prompt = original_prompt
+        router_reasoning += " | Prompt Enhancement Bypassed (Frontier model selected)"
+    else:
+        enhanced_prompt = await enhance_prompt(original_prompt)
+        router_reasoning += " | Selective Prompt Enhancement Applied (Quality boost for budget model)"
+
+    raw_messages = [{"role": "user", "content": enhanced_prompt}]
+
+    # Step 3: Execution Dispatcher
+    result = await dispatch_inference(
+        original_prompt=original_prompt,
+        enhanced_prompt=enhanced_prompt,
+        enhancer_model=settings.ENHANCER_MODEL if not is_frontier else "bypassed",
+        router_model=settings.ROUTER_MODEL,
+        selected_model=selected_model,
+        router_reasoning=router_reasoning,
+        original_messages=raw_messages
+    )
+
+    background_tasks.add_task(
+        evaluate_completion,
+        request_id=result["request_id"],
+        enhanced_prompt=enhanced_prompt,
+        completion=result["completion"]
+    )
+
+    completion_text = result["completion"]
+    
+    response_payload = {
+        "id": f"resp-{result['request_id']}",
+        "object": "response",
+        "created_at": int(time.time()),
+        "created": int(time.time()),
+        "status": "completed",
+        "model": selected_model,
+        "output": [
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": completion_text
+                    }
+                ]
+            }
+        ],
+        "choices": [
+            {
+                "index": 0,
+                "message": {
+                    "role": "assistant",
+                    "content": completion_text
+                },
+                "finish_reason": "stop"
+            }
+        ],
+        "usage": {
+            "input_tokens": result["metrics"]["prompt_tokens"],
+            "output_tokens": result["metrics"]["completion_tokens"],
+            "total_tokens": result["metrics"]["total_tokens"]
+        },
+        "wormhole_metadata": result["metrics"]
+    }
+    return response_payload
+
+# --- OpenAI-Compatible Models Endpoint ---
+@app.get("/v1/models")
+def list_v1_models():
+    models_list = [
+        {"id": "wormhole-auto", "object": "model", "created": int(time.time()), "owned_by": "wormhole"},
+        {"id": "gpt-5.5", "object": "model", "created": int(time.time()), "owned_by": "wormhole"},
+        {"id": "gpt-4o", "object": "model", "created": int(time.time()), "owned_by": "wormhole"},
+        {"id": "gpt-4o-mini", "object": "model", "created": int(time.time()), "owned_by": "wormhole"},
+        {"id": "claude-3-5-sonnet-20240620", "object": "model", "created": int(time.time()), "owned_by": "wormhole"}
+    ]
+    return {"object": "list", "data": models_list}
+
 # --- Enterprise Admin & Analytics APIs ---
 @app.get("/api/models")
 def list_candidate_models():

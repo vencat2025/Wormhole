@@ -62,8 +62,8 @@ class Settings:
             intelligence_tier="medium"
         ),
         CandidateModelConfig(
-            id="gemini/gemini-1.5-flash",
-            name="Gemini 1.5 Flash",
+            id="gemini/gemini-2.5-flash",
+            name="Gemini 2.5 Flash",
             provider="google",
             input_cost_per_1k=0.000075,
             output_cost_per_1k=0.0003,
@@ -82,13 +82,13 @@ class Settings:
             intelligence_tier="medium"
         ),
         CandidateModelConfig(
-            id="gemini/gemini-1.5-pro",
-            name="Gemini 1.5 Pro",
+            id="gemini/gemini-2.5-pro",
+            name="Gemini 2.5 Pro",
             provider="google",
             input_cost_per_1k=0.00125,
             output_cost_per_1k=0.0050,
             description="High-capacity Google model with 2M token context, suited for deep context search and complex logic.",
-            speed_tier="medium",
+            speed_tier="fast",
             intelligence_tier="high"
         ),
         CandidateModelConfig(

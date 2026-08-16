@@ -108,7 +108,12 @@ async def chat_completions(
                 router_reasoning=router_reasoning,
                 original_messages=raw_messages
             ),
-            media_type="text/event-stream"
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
         )
 
     # Step 3: Execution Dispatcher & Cost Metric Computation (Synchronous JSON)
@@ -216,7 +221,12 @@ async def openai_responses_endpoint(
                 router_reasoning=router_reasoning,
                 original_messages=raw_messages
             ),
-            media_type="text/event-stream"
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
         )
 
     # Step 3: Execution Dispatcher (Synchronous JSON)

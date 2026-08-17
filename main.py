@@ -56,6 +56,9 @@ app.add_middleware(
 class ChatMessage(BaseModel):
     role: str
     content: Optional[Union[str, List[Any], Dict[str, Any]]] = ""
+    name: Optional[str] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+    tool_call_id: Optional[str] = None
 
 class ChatCompletionRequest(BaseModel):
     model: Optional[str] = "wormhole-auto"  # Default routing keyword
@@ -63,6 +66,8 @@ class ChatCompletionRequest(BaseModel):
     temperature: Optional[float] = 0.7
     top_p: Optional[float] = 1.0
     stream: Optional[bool] = False
+    tools: Optional[List[Dict[str, Any]]] = None
+    tool_choice: Optional[Union[str, Dict[str, Any]]] = None
 
 ChatMessage.model_rebuild()
 ChatCompletionRequest.model_rebuild()
@@ -136,7 +141,7 @@ async def chat_completions(
         enhanced_prompt = await enhance_prompt(original_prompt)
         router_reasoning += " | Selective Prompt Enhancement Applied (Quality boost for budget model)"
 
-    raw_messages = [{"role": m.role, "content": m.content} for m in request.messages]
+    raw_messages = [m.model_dump(exclude_none=True) for m in request.messages]
 
     # Handle SSE token streaming if stream=True
     if request.stream:
@@ -148,7 +153,9 @@ async def chat_completions(
                 router_model=settings.ROUTER_MODEL,
                 selected_model=selected_model,
                 router_reasoning=router_reasoning,
-                original_messages=raw_messages
+                original_messages=raw_messages,
+                tools=request.tools,
+                tool_choice=request.tool_choice
             ),
             media_type="text/event-stream",
             headers={
@@ -166,7 +173,9 @@ async def chat_completions(
         router_model=settings.ROUTER_MODEL,
         selected_model=selected_model,
         router_reasoning=router_reasoning,
-        original_messages=raw_messages
+        original_messages=raw_messages,
+        tools=request.tools,
+        tool_choice=request.tool_choice
     )
 
     # Step 4: Asynchronous LLM-as-a-Judge Auto-Evaluation Task
@@ -342,6 +351,61 @@ async def openai_responses_endpoint(
         "wormhole_metadata": result["metrics"]
     }
     return response_payload
+
+# --- Anthropic Messages API Endpoint (For Claude Code CLI) ---
+@app.post("/v1/messages")
+async def anthropic_messages_endpoint(
+    raw_request: Dict[str, Any],
+    background_tasks: BackgroundTasks,
+    auth_token: str = Depends(verify_api_key)
+):
+    system_prompt = raw_request.get("system", "")
+    msgs = raw_request.get("messages", [])
+    
+    openai_messages = []
+    if system_prompt:
+        openai_messages.append({"role": "system", "content": extract_clean_text(system_prompt)})
+    for m in msgs:
+        openai_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
+
+    original_prompt = extract_user_prompt(msgs)
+    selected_model, router_reasoning = await route_prompt(original_prompt)
+
+    is_frontier = any(f in selected_model.lower() for f in ["gpt-4o", "sonnet", "gemini-1.5-pro"]) and not "mini" in selected_model.lower()
+    enhanced_prompt = original_prompt if is_frontier else await enhance_prompt(original_prompt)
+
+    result = await dispatch_inference(
+        original_prompt=original_prompt,
+        enhanced_prompt=enhanced_prompt,
+        enhancer_model=settings.ENHANCER_MODEL if not is_frontier else "bypassed",
+        router_model=settings.ROUTER_MODEL,
+        selected_model=selected_model,
+        router_reasoning=router_reasoning,
+        original_messages=openai_messages,
+        tools=raw_request.get("tools"),
+        tool_choice=raw_request.get("tool_choice")
+    )
+
+    background_tasks.add_task(
+        evaluate_completion,
+        request_id=result["request_id"],
+        enhanced_prompt=enhanced_prompt,
+        completion=result["completion"]
+    )
+
+    return {
+        "id": f"msg_{result['request_id']}",
+        "type": "message",
+        "role": "assistant",
+        "content": [{"type": "text", "text": result["completion"]}],
+        "model": selected_model,
+        "stop_reason": "end_turn",
+        "stop_sequence": None,
+        "usage": {
+            "input_tokens": result["metrics"]["prompt_tokens"],
+            "output_tokens": result["metrics"]["completion_tokens"]
+        }
+    }
 
 # --- OpenAI-Compatible Models Endpoint ---
 @app.get("/v1/models")

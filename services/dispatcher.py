@@ -50,7 +50,9 @@ async def dispatch_inference(
     router_model: str,
     selected_model: str,
     router_reasoning: str,
-    original_messages: List[Dict[str, Any]]
+    original_messages: List[Dict[str, Any]],
+    tools: Optional[List[Dict[str, Any]]] = None,
+    tool_choice: Optional[Any] = None
 ) -> Dict[str, Any]:
     request_id = f"wh-{uuid.uuid4().hex[:12]}"
     start_time = time.time()
@@ -61,10 +63,6 @@ async def dispatch_inference(
         router_reasoning += f" | Circuit Breaker Active for {selected_model} (Failed {PROVIDER_FAILURE_COUNTS.get(selected_model)} times). Automatic failover to {active_model}."
 
     messages_to_send = list(original_messages)
-    if messages_to_send and messages_to_send[-1].get("role") == "user":
-        messages_to_send[-1]["content"] = enhanced_prompt
-    else:
-        messages_to_send.append({"role": "user", "content": enhanced_prompt})
 
     prompt_tokens = 0
     completion_tokens = 0
@@ -74,6 +72,10 @@ async def dispatch_inference(
         extra_kwargs = {}
         if active_model.startswith("ollama/"):
             extra_kwargs["api_base"] = "http://127.0.0.1:11434"
+        if tools:
+            extra_kwargs["tools"] = tools
+        if tool_choice:
+            extra_kwargs["tool_choice"] = tool_choice
 
         response = await litellm.acompletion(
             model=active_model,
@@ -194,16 +196,14 @@ async def dispatch_streaming_inference(
     router_model: str,
     selected_model: str,
     router_reasoning: str,
-    original_messages: List[Dict[str, Any]]
+    original_messages: List[Dict[str, Any]],
+    tools: Optional[List[Dict[str, Any]]] = None,
+    tool_choice: Optional[Any] = None
 ) -> AsyncGenerator[str, None]:
     request_id = f"wh-{uuid.uuid4().hex[:12]}"
     created_ts = int(time.time())
 
     messages_to_send = list(original_messages)
-    if messages_to_send and messages_to_send[-1].get("role") == "user":
-        messages_to_send[-1]["content"] = enhanced_prompt
-    else:
-        messages_to_send.append({"role": "user", "content": enhanced_prompt})
 
     role_chunk = {
         "id": f"chatcmpl-{request_id}",
@@ -219,6 +219,10 @@ async def dispatch_streaming_inference(
         extra_kwargs = {}
         if selected_model.startswith("ollama/"):
             extra_kwargs["api_base"] = "http://127.0.0.1:11434"
+        if tools:
+            extra_kwargs["tools"] = tools
+        if tool_choice:
+            extra_kwargs["tool_choice"] = tool_choice
 
         response_stream = await litellm.acompletion(
             model=selected_model,
@@ -229,15 +233,27 @@ async def dispatch_streaming_inference(
         )
         async for chunk in response_stream:
             if chunk.choices and len(chunk.choices) > 0:
-                delta_content = chunk.choices[0].delta.content or ""
-                if delta_content:
-                    full_completion += delta_content
+                choice = chunk.choices[0]
+                delta_obj = choice.delta
+                delta_dict = {}
+                if hasattr(delta_obj, "content") and delta_obj.content:
+                    delta_dict["content"] = delta_obj.content
+                    full_completion += delta_obj.content
+                if hasattr(delta_obj, "tool_calls") and delta_obj.tool_calls:
+                    delta_dict["tool_calls"] = [
+                        tc.model_dump(exclude_none=True) if hasattr(tc, "model_dump") else dict(tc)
+                        for tc in delta_obj.tool_calls
+                    ]
+                if hasattr(delta_obj, "role") and delta_obj.role:
+                    delta_dict["role"] = delta_obj.role
+
+                if delta_dict:
                     out_chunk = {
                         "id": f"chatcmpl-{request_id}",
                         "object": "chat.completion.chunk",
                         "created": created_ts,
                         "model": selected_model,
-                        "choices": [{"index": 0, "delta": {"content": delta_content}, "finish_reason": None}]
+                        "choices": [{"index": 0, "delta": delta_dict, "finish_reason": choice.finish_reason}]
                     }
                     yield f"data: {json.dumps(out_chunk)}\n\n"
     except Exception as e:
@@ -328,7 +344,9 @@ async def dispatch_responses_streaming_inference(
     router_model: str,
     selected_model: str,
     router_reasoning: str,
-    original_messages: List[Dict[str, Any]]
+    original_messages: List[Dict[str, Any]],
+    tools: Optional[List[Dict[str, Any]]] = None,
+    tool_choice: Optional[Any] = None
 ) -> AsyncGenerator[str, None]:
     """
     Executes Responses API streaming events for OpenAI Codex CLI (v0.142+).
@@ -379,16 +397,16 @@ async def dispatch_responses_streaming_inference(
     yield f"event: response.content_part.added\ndata: {json.dumps(event_part)}\n\n"
 
     messages_to_send = list(original_messages)
-    if messages_to_send and messages_to_send[-1].get("role") == "user":
-        messages_to_send[-1]["content"] = enhanced_prompt
-    else:
-        messages_to_send.append({"role": "user", "content": enhanced_prompt})
 
     full_completion = ""
     try:
         extra_kwargs = {}
         if selected_model.startswith("ollama/"):
             extra_kwargs["api_base"] = "http://127.0.0.1:11434"
+        if tools:
+            extra_kwargs["tools"] = tools
+        if tool_choice:
+            extra_kwargs["tool_choice"] = tool_choice
 
         response_stream = await litellm.acompletion(
             model=selected_model,

@@ -380,7 +380,7 @@ async def dispatch_responses_streaming_inference(
             "type": "message",
             "role": "assistant",
             "status": "in_progress",
-            "content": [{"type": "text", "text": ""}]
+            "content": [{"type": "output_text", "text": ""}]
         }
     }
     yield f"data: {json.dumps(event_item)}\n\n"
@@ -392,7 +392,7 @@ async def dispatch_responses_streaming_inference(
         "item_id": item_id,
         "output_index": 0,
         "content_index": 0,
-        "part": {"type": "text", "text": ""}
+        "part": {"type": "output_text", "text": ""}
     }
     yield f"data: {json.dumps(event_part)}\n\n"
 
@@ -434,6 +434,15 @@ async def dispatch_responses_streaming_inference(
                         "delta": delta_content
                     }
                     yield f"data: {json.dumps(delta_evt)}\n\n"
+                    delta_evt_opt = {
+                        "type": "response.output_text.delta",
+                        "response_id": resp_id,
+                        "item_id": item_id,
+                        "output_index": 0,
+                        "content_index": 0,
+                        "delta": delta_content
+                    }
+                    yield f"data: {json.dumps(delta_evt_opt)}\n\n"
 
                 # B. Function Call / Tool Call Delta
                 tool_calls = getattr(delta_obj, "tool_calls", None)
@@ -618,7 +627,7 @@ async def dispatch_responses_streaming_inference(
                 }
                 yield f"data: {json.dumps(delta_evt)}\n\n"
 
-    # 4. response.text.done
+    # 4. response.text.done & response.output_text.done
     event_text_done = {
         "type": "response.text.done",
         "response_id": resp_id,
@@ -629,6 +638,16 @@ async def dispatch_responses_streaming_inference(
     }
     yield f"data: {json.dumps(event_text_done)}\n\n"
 
+    event_output_text_done = {
+        "type": "response.output_text.done",
+        "response_id": resp_id,
+        "item_id": item_id,
+        "output_index": 0,
+        "content_index": 0,
+        "text": full_completion
+    }
+    yield f"data: {json.dumps(event_output_text_done)}\n\n"
+
     # 5. response.content_part.done
     event_part_done = {
         "type": "response.content_part.done",
@@ -636,7 +655,7 @@ async def dispatch_responses_streaming_inference(
         "item_id": item_id,
         "output_index": 0,
         "content_index": 0,
-        "part": {"type": "text", "text": full_completion}
+        "part": {"type": "output_text", "text": full_completion}
     }
     yield f"data: {json.dumps(event_part_done)}\n\n"
 
@@ -650,7 +669,7 @@ async def dispatch_responses_streaming_inference(
             "type": "message",
             "role": "assistant",
             "status": "completed",
-            "content": [{"type": "text", "text": full_completion}]
+            "content": [{"type": "output_text", "text": full_completion}]
         }
     }
     yield f"data: {json.dumps(event_item_done)}\n\n"
@@ -670,7 +689,7 @@ async def dispatch_responses_streaming_inference(
                     "type": "message",
                     "role": "assistant",
                     "status": "completed",
-                    "content": [{"type": "text", "text": full_completion}]
+                    "content": [{"type": "output_text", "text": full_completion}]
                 }
             ]
         }

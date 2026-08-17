@@ -389,14 +389,27 @@ async def dispatch_responses_streaming_inference(
         if selected_model.startswith("ollama/"):
             extra_kwargs["api_base"] = "http://127.0.0.1:11434"
 
-        response = await litellm.acompletion(
+        response_stream = await litellm.acompletion(
             model=selected_model,
             messages=messages_to_send,
             temperature=0.7,
+            stream=True,
             **extra_kwargs
         )
-        choice = response.choices[0]
-        full_completion = choice.message.content or ""
+        async for chunk in response_stream:
+            if chunk.choices and len(chunk.choices) > 0:
+                delta_content = chunk.choices[0].delta.content or ""
+                if delta_content:
+                    full_completion += delta_content
+                    delta_evt = {
+                        "type": "response.text.delta",
+                        "response_id": resp_id,
+                        "output_index": 0,
+                        "content_index": 0,
+                        "delta": delta_content
+                    }
+                    yield f"event: response.text.delta\ndata: {json.dumps(delta_evt)}\n\n"
+
     except Exception as e:
         logger.warning(f"Target model call failed for '{selected_model}' ({e}). Executing prompt-aware fallback response.")
         prompt_lower = original_prompt.lower()
@@ -426,19 +439,17 @@ async def dispatch_responses_streaming_inference(
                 f"print('Execution completed for request: {original_prompt[:60]}')\n"
                 f"```\n"
             )
-
-    # Stream text deltas word by word
-    words = full_completion.split(" ")
-    for idx, word in enumerate(words):
-        delta = word if idx == len(words) - 1 else word + " "
-        delta_evt = {
-            "type": "response.text.delta",
-            "response_id": resp_id,
-            "output_index": 0,
-            "content_index": 0,
-            "delta": delta
-        }
-        yield f"event: response.text.delta\ndata: {json.dumps(delta_evt)}\n\n"
+        words = full_completion.split(" ")
+        for idx, word in enumerate(words):
+            delta = word if idx == len(words) - 1 else word + " "
+            delta_evt = {
+                "type": "response.text.delta",
+                "response_id": resp_id,
+                "output_index": 0,
+                "content_index": 0,
+                "delta": delta
+            }
+            yield f"event: response.text.delta\ndata: {json.dumps(delta_evt)}\n\n"
 
     # 4. response.text.done
     event_text_done = {

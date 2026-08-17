@@ -347,6 +347,28 @@ def convert_responses_input_to_messages(raw_request: Dict[str, Any]) -> Tuple[Li
                 else:
                     normalized_tools.append(t)
 
+    # 4. Inject Tool Usage Directive for Agentic Execution Consistency
+    if normalized_tools:
+        tool_names = [
+            t.get("function", {}).get("name", t.get("name", ""))
+            for t in normalized_tools
+            if isinstance(t, dict)
+        ]
+        tool_names_str = ", ".join([tn for tn in tool_names if tn])
+        agent_directive = (
+            f"\n\nCRITICAL SYSTEM DIRECTIVE FOR TOOL USAGE: You are an autonomous coding assistant inside Codex CLI with direct execution access to tools: [{tool_names_str}]. "
+            f"When the user asks to create files, make changes, refactor code, run commands, or implement features (e.g. 'Make the changes', 'Create app', 'Fix bug'), "
+            f"DO NOT write prose explanations or text instructions describing what the user should do. You MUST call the appropriate function tool immediately to perform the action."
+        )
+        has_system = False
+        for m in sanitized_messages:
+            if m.get("role") == "system":
+                m["content"] = str(m.get("content", "")) + agent_directive
+                has_system = True
+                break
+        if not has_system:
+            sanitized_messages.insert(0, {"role": "system", "content": agent_directive.strip()})
+
     return sanitized_messages, normalized_tools
 
 # --- OpenAI Responses API Endpoint (For Codex CLI & Agentic Tools) ---

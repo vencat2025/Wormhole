@@ -43,6 +43,16 @@ class Settings:
     # Registered Candidate Target Models in Enterprise Fleet (Cloud + Open-Source Local)
     CANDIDATE_MODELS: List[CandidateModelConfig] = [
         CandidateModelConfig(
+            id="groq/llama-3.1-8b-instant",
+            name="Llama 3.1 8B Instant (Groq Cloud)",
+            provider="groq",
+            input_cost_per_1k=0.00005,
+            output_cost_per_1k=0.00008,
+            description="Sub-100ms ultra-low latency model for high-throughput execution.",
+            speed_tier="ultra-fast",
+            intelligence_tier="medium"
+        ),
+        CandidateModelConfig(
             id="groq/llama-3.3-70b-versatile",
             name="Llama 3.3 70B (Groq Cloud)",
             provider="groq",

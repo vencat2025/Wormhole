@@ -67,10 +67,24 @@ class ChatCompletionRequest(BaseModel):
 ChatMessage.model_rebuild()
 ChatCompletionRequest.model_rebuild()
 
+def strip_codex_system_context(text: str) -> str:
+    if not isinstance(text, str):
+        return str(text)
+    if "</environment_context>" in text:
+        return text.split("</environment_context>")[-1].strip()
+    if "</skills_instructions>" in text:
+        return text.split("</skills_instructions>")[-1].strip()
+    if "</apps_instructions>" in text:
+        return text.split("</apps_instructions>")[-1].strip()
+    if "</permissions_instructions>" in text:
+        return text.split("</permissions_instructions>")[-1].strip()
+    return text
+
 def extract_clean_text(content_obj: Any) -> str:
+    res = ""
     if isinstance(content_obj, str):
-        return content_obj
-    if isinstance(content_obj, list):
+        res = content_obj
+    elif isinstance(content_obj, list):
         texts = []
         for item in content_obj:
             if isinstance(item, str):
@@ -81,13 +95,15 @@ def extract_clean_text(content_obj: Any) -> str:
                 elif "content" in item:
                     texts.append(extract_clean_text(item["content"]))
         if texts:
-            return " ".join(texts)
-    if isinstance(content_obj, dict):
+            res = " ".join(texts)
+    elif isinstance(content_obj, dict):
         if "text" in content_obj:
-            return str(content_obj["text"])
-        if "content" in content_obj:
-            return extract_clean_text(content_obj["content"])
-    return str(content_obj)
+            res = str(content_obj["text"])
+        elif "content" in content_obj:
+            res = extract_clean_text(content_obj["content"])
+    else:
+        res = str(content_obj)
+    return strip_codex_system_context(res)
 
 # --- Core Gateway Endpoint ---
 @app.post("/v1/chat/completions")
@@ -197,6 +213,28 @@ async def chat_completions(
     
     return response_payload
 
+def extract_user_prompt(inp: Any) -> str:
+    res = ""
+    if isinstance(inp, list) and len(inp) > 0:
+        user_msgs = [m for m in inp if isinstance(m, dict) and m.get("role") == "user"]
+        if user_msgs:
+            target = user_msgs[-1].get("content")
+            res = extract_clean_text(target)
+        else:
+            last_item = inp[-1]
+            if isinstance(last_item, dict):
+                if "content" in last_item:
+                    res = extract_clean_text(last_item["content"])
+                elif "text" in last_item:
+                    res = str(last_item["text"])
+                else:
+                    res = str(last_item)
+            else:
+                res = str(last_item)
+    else:
+        res = extract_clean_text(inp)
+    return strip_codex_system_context(res)
+
 # --- OpenAI Responses API Endpoint (For Codex CLI & Agentic Tools) ---
 @app.post("/v1/responses")
 async def openai_responses_endpoint(
@@ -207,11 +245,11 @@ async def openai_responses_endpoint(
     original_prompt = "Hello"
     if "input" in raw_request:
         inp = raw_request["input"]
-        original_prompt = extract_clean_text(inp)
+        original_prompt = extract_user_prompt(inp)
     elif "messages" in raw_request:
         msgs = raw_request["messages"]
         if msgs and len(msgs) > 0:
-            original_prompt = extract_clean_text(msgs[-1].get("content", "Hello"))
+            original_prompt = extract_user_prompt(msgs)
 
     # Step 1: Model 2 - Local Router SLM Decision (<2ms)
     selected_model, router_reasoning = await route_prompt(original_prompt)

@@ -244,6 +244,111 @@ def extract_user_prompt(inp: Any) -> str:
         res = extract_clean_text(inp)
     return strip_codex_system_context(res)
 
+def convert_responses_input_to_messages(raw_request: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Optional[List[Dict[str, Any]]]]:
+    messages = []
+    
+    # 1. System instructions
+    instructions = raw_request.get("instructions")
+    if instructions:
+        clean_inst = extract_clean_text(instructions)
+        if clean_inst:
+            messages.append({"role": "system", "content": clean_inst})
+
+    # 2. Input items
+    inp = raw_request.get("input", [])
+    if isinstance(inp, str):
+        messages.append({"role": "user", "content": extract_clean_text(inp)})
+    elif isinstance(inp, list):
+        for item in inp:
+            if isinstance(item, str):
+                messages.append({"role": "user", "content": extract_clean_text(item)})
+            elif isinstance(item, dict):
+                item_type = item.get("type", "message")
+                
+                if item_type == "message":
+                    role = item.get("role", "user")
+                    content_raw = item.get("content", "")
+                    clean_content = extract_clean_text(content_raw)
+                    messages.append({"role": role, "content": clean_content})
+                
+                elif item_type == "function_call":
+                    call_id = item.get("call_id", item.get("id", f"call_{uuid.uuid4().hex[:8]}"))
+                    name = item.get("name", "")
+                    args = item.get("arguments", "{}")
+                    if isinstance(args, dict):
+                        args = json.dumps(args)
+                    messages.append({
+                        "role": "assistant",
+                        "content": "",
+                        "tool_calls": [
+                            {
+                                "id": call_id,
+                                "type": "function",
+                                "function": {"name": name, "arguments": args}
+                            }
+                        ]
+                    })
+                
+                elif item_type == "function_call_output":
+                    call_id = item.get("call_id", item.get("id", ""))
+                    output = item.get("output", "")
+                    clean_output = extract_clean_text(output)
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": call_id,
+                        "content": clean_output or "Tool executed successfully."
+                    })
+                else:
+                    role = item.get("role", "user")
+                    content = extract_clean_text(item.get("content", item.get("text", "")))
+                    messages.append({"role": role, "content": content})
+
+    elif "messages" in raw_request and isinstance(raw_request["messages"], list):
+        for m in raw_request["messages"]:
+            if isinstance(m, dict):
+                messages.append({"role": m.get("role", "user"), "content": extract_clean_text(m.get("content", ""))})
+
+    # Sanitize messages for provider compatibility (Groq, OpenAI, Anthropic)
+    sanitized_messages = []
+    for m in messages:
+        role = m.get("role", "user")
+        content = m.get("content")
+        tool_calls = m.get("tool_calls")
+        
+        if role in ["user", "system", "tool"]:
+            msg_dict = {"role": role, "content": str(content) if content else "..."}
+            if "tool_call_id" in m:
+                msg_dict["tool_call_id"] = m["tool_call_id"]
+            sanitized_messages.append(msg_dict)
+        elif role == "assistant":
+            msg_dict = {"role": "assistant", "content": str(content) if content is not None else ""}
+            if tool_calls:
+                msg_dict["tool_calls"] = tool_calls
+            sanitized_messages.append(msg_dict)
+
+    # 3. Tools normalization
+    raw_tools = raw_request.get("tools")
+    normalized_tools = None
+    if raw_tools and isinstance(raw_tools, list):
+        normalized_tools = []
+        for t in raw_tools:
+            if isinstance(t, dict):
+                if t.get("type") == "function" and "function" in t:
+                    normalized_tools.append(t)
+                elif "name" in t:
+                    normalized_tools.append({
+                        "type": "function",
+                        "function": {
+                            "name": t["name"],
+                            "description": t.get("description", ""),
+                            "parameters": t.get("parameters", {"type": "object", "properties": {}})
+                        }
+                    })
+                else:
+                    normalized_tools.append(t)
+
+    return sanitized_messages, normalized_tools
+
 # --- OpenAI Responses API Endpoint (For Codex CLI & Agentic Tools) ---
 @app.post("/v1/responses")
 async def openai_responses_endpoint(
@@ -272,30 +377,11 @@ async def openai_responses_endpoint(
         enhanced_prompt = await enhance_prompt(original_prompt)
         router_reasoning += " | Selective Prompt Enhancement Applied (Quality boost for budget model)"
 
-    raw_messages = []
-    if "instructions" in raw_request and raw_request["instructions"]:
-        raw_messages.append({"role": "system", "content": extract_clean_text(raw_request["instructions"])})
-
-    inp = raw_request.get("input", [])
-    if isinstance(inp, str):
-        raw_messages.append({"role": "user", "content": inp})
-    elif isinstance(inp, list):
-        for item in inp:
-            if isinstance(item, str):
-                raw_messages.append({"role": "user", "content": item})
-            elif isinstance(item, dict):
-                role = item.get("role", "user")
-                content = item.get("content", item.get("text", ""))
-                raw_messages.append({"role": role, "content": content})
-    elif "messages" in raw_request and isinstance(raw_request["messages"], list):
-        for m in raw_request["messages"]:
-            if isinstance(m, dict):
-                raw_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
+    raw_messages, tools = convert_responses_input_to_messages(raw_request)
 
     if not raw_messages:
         raw_messages = [{"role": "user", "content": enhanced_prompt}]
 
-    tools = raw_request.get("tools")
     tool_choice = raw_request.get("tool_choice")
 
     # Handle streaming for OpenAI Codex CLI (v0.142+)

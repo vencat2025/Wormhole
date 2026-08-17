@@ -272,7 +272,31 @@ async def openai_responses_endpoint(
         enhanced_prompt = await enhance_prompt(original_prompt)
         router_reasoning += " | Selective Prompt Enhancement Applied (Quality boost for budget model)"
 
-    raw_messages = [{"role": "user", "content": enhanced_prompt}]
+    raw_messages = []
+    if "instructions" in raw_request and raw_request["instructions"]:
+        raw_messages.append({"role": "system", "content": extract_clean_text(raw_request["instructions"])})
+
+    inp = raw_request.get("input", [])
+    if isinstance(inp, str):
+        raw_messages.append({"role": "user", "content": inp})
+    elif isinstance(inp, list):
+        for item in inp:
+            if isinstance(item, str):
+                raw_messages.append({"role": "user", "content": item})
+            elif isinstance(item, dict):
+                role = item.get("role", "user")
+                content = item.get("content", item.get("text", ""))
+                raw_messages.append({"role": role, "content": content})
+    elif "messages" in raw_request and isinstance(raw_request["messages"], list):
+        for m in raw_request["messages"]:
+            if isinstance(m, dict):
+                raw_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
+
+    if not raw_messages:
+        raw_messages = [{"role": "user", "content": enhanced_prompt}]
+
+    tools = raw_request.get("tools")
+    tool_choice = raw_request.get("tool_choice")
 
     # Handle streaming for OpenAI Codex CLI (v0.142+)
     if raw_request.get("stream", True):
@@ -284,7 +308,9 @@ async def openai_responses_endpoint(
                 router_model=settings.ROUTER_MODEL,
                 selected_model=selected_model,
                 router_reasoning=router_reasoning,
-                original_messages=raw_messages
+                original_messages=raw_messages,
+                tools=tools,
+                tool_choice=tool_choice
             ),
             media_type="text/event-stream",
             headers={
@@ -302,7 +328,9 @@ async def openai_responses_endpoint(
         router_model=settings.ROUTER_MODEL,
         selected_model=selected_model,
         router_reasoning=router_reasoning,
-        original_messages=raw_messages
+        original_messages=raw_messages,
+        tools=tools,
+        tool_choice=tool_choice
     )
 
     background_tasks.add_task(

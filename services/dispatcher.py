@@ -368,7 +368,7 @@ async def dispatch_responses_streaming_inference(
             "model": selected_model
         }
     }
-    yield f"event: response.created\ndata: {json.dumps(event_created)}\n\n"
+    yield f"data: {json.dumps(event_created)}\n\n"
 
     # 2. response.output_item.added
     event_item = {
@@ -383,7 +383,7 @@ async def dispatch_responses_streaming_inference(
             "content": [{"type": "text", "text": ""}]
         }
     }
-    yield f"event: response.output_item.added\ndata: {json.dumps(event_item)}\n\n"
+    yield f"data: {json.dumps(event_item)}\n\n"
 
     # 3. response.content_part.added
     event_part = {
@@ -394,7 +394,7 @@ async def dispatch_responses_streaming_inference(
         "content_index": 0,
         "part": {"type": "text", "text": ""}
     }
-    yield f"event: response.content_part.added\ndata: {json.dumps(event_part)}\n\n"
+    yield f"data: {json.dumps(event_part)}\n\n"
 
     messages_to_send = list(original_messages)
 
@@ -428,7 +428,7 @@ async def dispatch_responses_streaming_inference(
                         "content_index": 0,
                         "delta": delta_content
                     }
-                    yield f"event: response.text.delta\ndata: {json.dumps(delta_evt)}\n\n"
+                    yield f"data: {json.dumps(delta_evt)}\n\n"
 
     except Exception as e:
         logger.warning(f"Target model call failed for '{selected_model}' ({e}). Executing prompt-aware fallback response.")
@@ -470,7 +470,7 @@ async def dispatch_responses_streaming_inference(
                 "content_index": 0,
                 "delta": delta
             }
-            yield f"event: response.text.delta\ndata: {json.dumps(delta_evt)}\n\n"
+            yield f"data: {json.dumps(delta_evt)}\n\n"
 
     # 4. response.text.done
     event_text_done = {
@@ -481,7 +481,7 @@ async def dispatch_responses_streaming_inference(
         "content_index": 0,
         "text": full_completion
     }
-    yield f"event: response.text.done\ndata: {json.dumps(event_text_done)}\n\n"
+    yield f"data: {json.dumps(event_text_done)}\n\n"
 
     # 5. response.content_part.done
     event_part_done = {
@@ -492,7 +492,7 @@ async def dispatch_responses_streaming_inference(
         "content_index": 0,
         "part": {"type": "text", "text": full_completion}
     }
-    yield f"event: response.content_part.done\ndata: {json.dumps(event_part_done)}\n\n"
+    yield f"data: {json.dumps(event_part_done)}\n\n"
 
     # 6. response.output_item.done
     event_item_done = {
@@ -507,7 +507,7 @@ async def dispatch_responses_streaming_inference(
             "content": [{"type": "text", "text": full_completion}]
         }
     }
-    yield f"event: response.output_item.done\ndata: {json.dumps(event_item_done)}\n\n"
+    yield f"data: {json.dumps(event_item_done)}\n\n"
 
     # 7. response.completed
     event_completed = {
@@ -529,7 +529,7 @@ async def dispatch_responses_streaming_inference(
             ]
         }
     }
-    yield f"event: response.completed\ndata: {json.dumps(event_completed)}\n\n"
+    yield f"data: {json.dumps(event_completed)}\n\n"
     yield "data: [DONE]\n\n"
 
     # Log metrics to DB

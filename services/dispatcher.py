@@ -467,28 +467,10 @@ async def dispatch_responses_streaming_inference(
             if chunk.choices and len(chunk.choices) > 0:
                 delta_obj = chunk.choices[0].delta
                 
-                # A. Text Delta
+                # A. Text Delta (Buffered for tool extraction)
                 delta_content = getattr(delta_obj, "content", "") or ""
                 if delta_content:
                     full_completion += delta_content
-                    delta_evt = {
-                        "type": "response.text.delta",
-                        "response_id": resp_id,
-                        "item_id": item_id,
-                        "output_index": 0,
-                        "content_index": 0,
-                        "delta": delta_content
-                    }
-                    yield f"data: {json.dumps(delta_evt)}\n\n"
-                    delta_evt_opt = {
-                        "type": "response.output_text.delta",
-                        "response_id": resp_id,
-                        "item_id": item_id,
-                        "output_index": 0,
-                        "content_index": 0,
-                        "delta": delta_content
-                    }
-                    yield f"data: {json.dumps(delta_evt_opt)}\n\n"
 
                 # B. Function Call / Tool Call Delta
                 tool_calls = getattr(delta_obj, "tool_calls", None)
@@ -608,6 +590,29 @@ async def dispatch_responses_streaming_inference(
                         }
                     }
                     yield f"data: {json.dumps(event_fn_item_done)}\n\n"
+            else:
+                # No tool calls found in text output; stream the buffered text deltas to Codex CLI
+                words = full_completion.split(" ")
+                for idx, word in enumerate(words):
+                    delta = word if idx == len(words) - 1 else word + " "
+                    delta_evt = {
+                        "type": "response.text.delta",
+                        "response_id": resp_id,
+                        "item_id": item_id,
+                        "output_index": 0,
+                        "content_index": 0,
+                        "delta": delta
+                    }
+                    yield f"data: {json.dumps(delta_evt)}\n\n"
+                    delta_evt_opt = {
+                        "type": "response.output_text.delta",
+                        "response_id": resp_id,
+                        "item_id": item_id,
+                        "output_index": 0,
+                        "content_index": 0,
+                        "delta": delta
+                    }
+                    yield f"data: {json.dumps(delta_evt_opt)}\n\n"
 
     except Exception as e:
         record_provider_failure(selected_model)

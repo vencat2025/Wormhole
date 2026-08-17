@@ -4,3 +4,4 @@ __pycache__/
 wormhole.db
 .pytest_cache/
 *.log
+.env

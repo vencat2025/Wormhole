@@ -80,3 +80,14 @@ async def test_extract_tool_calls_from_text():
     assert "touch app.py" in tool_calls[0]["arguments"]
     assert tool_calls[1]["name"] == "exec"
     assert "echo" in tool_calls[1]["arguments"]
+
+    sample_md = "**index.html:**\n\n```html\n<h1>Hello</h1>\n```\n\n**script.js:**\n\n```javascript\nconsole.log(1);\n```"
+    tool_calls_md = extract_tool_calls_from_text(sample_md)
+    assert len(tool_calls_md) == 2
+    assert "index.html" in tool_calls_md[0]["arguments"]
+    assert "script.js" in tool_calls_md[1]["arguments"]
+
+    sample_paren = "(exec) flask new app"
+    tool_calls_paren = extract_tool_calls_from_text(sample_paren)
+    assert len(tool_calls_paren) == 1
+    assert "flask new app" in tool_calls_paren[0]["arguments"]

@@ -14,17 +14,44 @@ logger = logging.getLogger("wormhole.dispatcher")
 
 PROVIDER_FAILURE_COUNTS: Dict[str, int] = {}
 
+import os
+
 def extract_tool_calls_from_text(text: str) -> List[Dict[str, Any]]:
     tool_calls = []
-    # Pattern 1: <exec> command </exec>
+    
+    # 1. XML <exec> command </exec> or <exec>command = "..."</exec>
     exec_matches = re.findall(r'<exec>(.*?)</exec>', text, re.DOTALL)
     for cmd in exec_matches:
         clean_cmd = cmd.strip()
+        if clean_cmd.startswith("command =") or clean_cmd.startswith("command="):
+            clean_cmd = clean_cmd.split("=", 1)[1].strip().strip('"').strip("'")
         if clean_cmd:
-            tool_calls.append({
-                "name": "exec",
-                "arguments": json.dumps({"command": clean_cmd})
-            })
+            tool_calls.append({"name": "exec", "arguments": json.dumps({"command": clean_cmd})})
+
+    # 2. Parentheses/Brackets (exec) command or [exec] command
+    paren_matches = re.findall(r"[\(\[]exec[\)\]]\s*([^\n]+)", text, re.IGNORECASE)
+    for cmd in paren_matches:
+        clean_cmd = cmd.strip()
+        if clean_cmd:
+            tool_calls.append({"name": "exec", "arguments": json.dumps({"command": clean_cmd})})
+
+    # 3. Markdown Code Blocks with Filenames (e.g. **index.html:** \n ```html ... ```)
+    md_block_pattern = r"(?:(?:\*\*|###?|File:\s*|[`\"])?\s*([a-zA-Z0-9_\-/\.]+\.[a-zA-Z0-9]+)[:`*]*\s*\n+)?```[a-zA-Z0-9_-]*\n(.*?)```"
+    md_matches = re.findall(md_block_pattern, text, re.DOTALL)
+    
+    for filename, code_content in md_matches:
+        filename = (filename or "").strip()
+        filename = re.sub(r"[:`*]", "", filename).strip()
+        code_content = code_content.strip()
+        
+        if filename and ("." in filename) and not filename.startswith("http") and code_content:
+            existing_files = [json.loads(tc["arguments"]).get("command", "") for tc in tool_calls]
+            if not any(f"> {filename}" in ef for ef in existing_files):
+                dir_name = os.path.dirname(filename)
+                mkdir_cmd = f"mkdir -p {dir_name} && " if dir_name else ""
+                cmd = f"{mkdir_cmd}cat << 'EOF' > {filename}\n{code_content}\nEOF"
+                tool_calls.append({"name": "exec", "arguments": json.dumps({"command": cmd})})
+
     return tool_calls
 
 def get_model_config(model_id: str) -> CandidateModelConfig:
@@ -417,18 +444,17 @@ async def dispatch_responses_streaming_inference(
     messages_to_send = list(original_messages)
 
     full_completion = ""
+    active_fn_calls = {}
     try:
         extra_kwargs = {}
         if selected_model.startswith("ollama/"):
             extra_kwargs["api_base"] = "http://127.0.0.1:11434"
-        if tools and not active_model.startswith("groq/"):
+        if tools and not selected_model.startswith("groq/"):
             extra_kwargs["tools"] = tools
             if tool_choice and tool_choice != "none":
                 extra_kwargs["tool_choice"] = tool_choice
             else:
                 extra_kwargs["tool_choice"] = "auto"
-
-        active_fn_calls = {}
 
         response_stream = await litellm.acompletion(
             model=selected_model,

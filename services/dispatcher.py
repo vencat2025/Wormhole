@@ -371,6 +371,7 @@ async def dispatch_responses_streaming_inference(
     event_part = {
         "type": "response.content_part.added",
         "response_id": resp_id,
+        "item_id": item_id,
         "output_index": 0,
         "content_index": 0,
         "part": {"type": "text", "text": ""}
@@ -404,6 +405,7 @@ async def dispatch_responses_streaming_inference(
                     delta_evt = {
                         "type": "response.text.delta",
                         "response_id": resp_id,
+                        "item_id": item_id,
                         "output_index": 0,
                         "content_index": 0,
                         "delta": delta_content
@@ -445,6 +447,7 @@ async def dispatch_responses_streaming_inference(
             delta_evt = {
                 "type": "response.text.delta",
                 "response_id": resp_id,
+                "item_id": item_id,
                 "output_index": 0,
                 "content_index": 0,
                 "delta": delta
@@ -455,6 +458,7 @@ async def dispatch_responses_streaming_inference(
     event_text_done = {
         "type": "response.text.done",
         "response_id": resp_id,
+        "item_id": item_id,
         "output_index": 0,
         "content_index": 0,
         "text": full_completion
@@ -465,6 +469,7 @@ async def dispatch_responses_streaming_inference(
     event_part_done = {
         "type": "response.content_part.done",
         "response_id": resp_id,
+        "item_id": item_id,
         "output_index": 0,
         "content_index": 0,
         "part": {"type": "text", "text": full_completion}

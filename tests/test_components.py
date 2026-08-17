@@ -69,3 +69,14 @@ async def test_dataset_exporter():
     enhancer_data = export_enhancer_dataset()
     assert isinstance(router_data, list)
     assert isinstance(enhancer_data, list)
+
+@pytest.mark.asyncio
+async def test_extract_tool_calls_from_text():
+    from services.dispatcher import extract_tool_calls_from_text
+    sample = "<exec> touch app.py </exec>\n<exec> echo \"hello\" > app.py </exec>"
+    tool_calls = extract_tool_calls_from_text(sample)
+    assert len(tool_calls) == 2
+    assert tool_calls[0]["name"] == "exec"
+    assert "touch app.py" in tool_calls[0]["arguments"]
+    assert tool_calls[1]["name"] == "exec"
+    assert "echo" in tool_calls[1]["arguments"]

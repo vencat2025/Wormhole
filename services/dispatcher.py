@@ -3,6 +3,7 @@ import uuid
 import json
 import logging
 from typing import Dict, Any, List, AsyncGenerator
+import re
 import litellm
 from sqlmodel import Session
 from config import settings, CandidateModelConfig
@@ -12,6 +13,19 @@ from db.models import InferenceLog
 logger = logging.getLogger("wormhole.dispatcher")
 
 PROVIDER_FAILURE_COUNTS: Dict[str, int] = {}
+
+def extract_tool_calls_from_text(text: str) -> List[Dict[str, Any]]:
+    tool_calls = []
+    # Pattern 1: <exec> command </exec>
+    exec_matches = re.findall(r'<exec>(.*?)</exec>', text, re.DOTALL)
+    for cmd in exec_matches:
+        clean_cmd = cmd.strip()
+        if clean_cmd:
+            tool_calls.append({
+                "name": "exec",
+                "arguments": json.dumps({"command": clean_cmd})
+            })
+    return tool_calls
 
 def get_model_config(model_id: str) -> CandidateModelConfig:
     for m in settings.CANDIDATE_MODELS:
@@ -626,6 +640,54 @@ async def dispatch_responses_streaming_inference(
                     "delta": delta
                 }
                 yield f"data: {json.dumps(delta_evt)}\n\n"
+
+        # Dynamic conversion of text tool tags (<exec> ... </exec>) into native Responses API function_call events
+        if not active_fn_calls:
+            extracted = extract_tool_calls_from_text(full_completion)
+            if extracted:
+                logger.info(f"Extracted {len(extracted)} tool calls from text stream for Codex CLI execution.")
+                for idx, tc in enumerate(extracted):
+                    fn_item_id = f"item-fn-{request_id}-{idx+1}"
+                    fn_call_id = f"call_{uuid.uuid4().hex[:8]}"
+                    
+                    event_fn_item = {
+                        "type": "response.output_item.added",
+                        "response_id": resp_id,
+                        "output_index": idx + 1,
+                        "item": {
+                            "id": fn_item_id,
+                            "type": "function_call",
+                            "call_id": fn_call_id,
+                            "name": tc["name"],
+                            "arguments": tc["arguments"]
+                        }
+                    }
+                    yield f"data: {json.dumps(event_fn_item)}\n\n"
+
+                    event_fn_done = {
+                        "type": "response.function_call_arguments.done",
+                        "response_id": resp_id,
+                        "item_id": fn_item_id,
+                        "output_index": idx + 1,
+                        "call_id": fn_call_id,
+                        "arguments": tc["arguments"]
+                    }
+                    yield f"data: {json.dumps(event_fn_done)}\n\n"
+
+                    event_fn_item_done = {
+                        "type": "response.output_item.done",
+                        "response_id": resp_id,
+                        "output_index": idx + 1,
+                        "item": {
+                            "id": fn_item_id,
+                            "type": "function_call",
+                            "call_id": fn_call_id,
+                            "name": tc["name"],
+                            "arguments": tc["arguments"],
+                            "status": "completed"
+                        }
+                    }
+                    yield f"data: {json.dumps(event_fn_item_done)}\n\n"
 
     # 4. response.text.done & response.output_text.done
     event_text_done = {

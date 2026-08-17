@@ -86,10 +86,12 @@ async def dispatch_inference(
         extra_kwargs = {}
         if active_model.startswith("ollama/"):
             extra_kwargs["api_base"] = "http://127.0.0.1:11434"
-        if tools:
+        if tools and not active_model.startswith("groq/"):
             extra_kwargs["tools"] = tools
-        if tool_choice:
-            extra_kwargs["tool_choice"] = tool_choice
+            if tool_choice and tool_choice != "none":
+                extra_kwargs["tool_choice"] = tool_choice
+            else:
+                extra_kwargs["tool_choice"] = "auto"
 
         response = await litellm.acompletion(
             model=active_model,
@@ -233,10 +235,12 @@ async def dispatch_streaming_inference(
         extra_kwargs = {}
         if selected_model.startswith("ollama/"):
             extra_kwargs["api_base"] = "http://127.0.0.1:11434"
-        if tools:
+        if tools and not selected_model.startswith("groq/"):
             extra_kwargs["tools"] = tools
-        if tool_choice:
-            extra_kwargs["tool_choice"] = tool_choice
+            if tool_choice and tool_choice != "none":
+                extra_kwargs["tool_choice"] = tool_choice
+            else:
+                extra_kwargs["tool_choice"] = "auto"
 
         response_stream = await litellm.acompletion(
             model=selected_model,
@@ -417,10 +421,12 @@ async def dispatch_responses_streaming_inference(
         extra_kwargs = {}
         if selected_model.startswith("ollama/"):
             extra_kwargs["api_base"] = "http://127.0.0.1:11434"
-        if tools:
+        if tools and not active_model.startswith("groq/"):
             extra_kwargs["tools"] = tools
-        if tool_choice:
-            extra_kwargs["tool_choice"] = tool_choice
+            if tool_choice and tool_choice != "none":
+                extra_kwargs["tool_choice"] = tool_choice
+            else:
+                extra_kwargs["tool_choice"] = "auto"
 
         active_fn_calls = {}
 
@@ -529,13 +535,60 @@ async def dispatch_responses_streaming_inference(
             }
             yield f"data: {json.dumps(event_fn_item_done)}\n\n"
 
+        # Dynamic conversion of text tool tags (<exec> ... </exec>) into native Responses API function_call events
+        if not active_fn_calls:
+            extracted = extract_tool_calls_from_text(full_completion)
+            if extracted:
+                logger.info(f"Extracted {len(extracted)} tool calls from text stream for Codex CLI execution.")
+                for idx, tc in enumerate(extracted):
+                    fn_item_id = f"item-fn-{request_id}-{idx+1}"
+                    fn_call_id = f"call_{uuid.uuid4().hex[:8]}"
+                    
+                    event_fn_item = {
+                        "type": "response.output_item.added",
+                        "response_id": resp_id,
+                        "output_index": idx + 1,
+                        "item": {
+                            "id": fn_item_id,
+                            "type": "function_call",
+                            "call_id": fn_call_id,
+                            "name": tc["name"],
+                            "arguments": tc["arguments"]
+                        }
+                    }
+                    yield f"data: {json.dumps(event_fn_item)}\n\n"
+
+                    event_fn_done = {
+                        "type": "response.function_call_arguments.done",
+                        "response_id": resp_id,
+                        "item_id": fn_item_id,
+                        "output_index": idx + 1,
+                        "call_id": fn_call_id,
+                        "arguments": tc["arguments"]
+                    }
+                    yield f"data: {json.dumps(event_fn_done)}\n\n"
+
+                    event_fn_item_done = {
+                        "type": "response.output_item.done",
+                        "response_id": resp_id,
+                        "output_index": idx + 1,
+                        "item": {
+                            "id": fn_item_id,
+                            "type": "function_call",
+                            "call_id": fn_call_id,
+                            "name": tc["name"],
+                            "arguments": tc["arguments"],
+                            "status": "completed"
+                        }
+                    }
+                    yield f"data: {json.dumps(event_fn_item_done)}\n\n"
+
     except Exception as e:
         record_provider_failure(selected_model)
         logger.warning(f"Target model call failed for '{selected_model}' ({e}). Attempting failover candidates.")
         
         fallback_candidates = [
             "groq/llama-3.1-8b-instant",
-            "groq/llama3-8b-8192",
             "groq/llama-3.3-70b-versatile"
         ]
         

@@ -517,103 +517,103 @@ async def dispatch_responses_streaming_inference(
 
     except Exception as e:
         record_provider_failure(selected_model)
-        fallback_model = settings.FALLBACK_MODEL if settings.FALLBACK_MODEL != selected_model else "gpt-4o-mini"
-        logger.warning(f"Target model call failed for '{selected_model}' ({e}). Executing automatic provider failover to '{fallback_model}'.")
+        logger.warning(f"Target model call failed for '{selected_model}' ({e}). Attempting failover candidates.")
         
-        try:
-            fallback_stream = await litellm.acompletion(
-                model=fallback_model,
-                messages=messages_to_send,
-                temperature=0.7,
-                stream=True,
-                **extra_kwargs
-            )
-            async for chunk in fallback_stream:
-                if chunk.choices and len(chunk.choices) > 0:
-                    delta_obj = chunk.choices[0].delta
-                    delta_content = getattr(delta_obj, "content", "") or ""
-                    if delta_content:
-                        full_completion += delta_content
-                        delta_evt = {
-                            "type": "response.text.delta",
-                            "response_id": resp_id,
-                            "item_id": item_id,
-                            "output_index": 0,
-                            "content_index": 0,
-                            "delta": delta_content
-                        }
-                        yield f"data: {json.dumps(delta_evt)}\n\n"
+        fallback_candidates = [
+            "groq/llama-3.1-8b-instant",
+            "groq/llama3-8b-8192",
+            "groq/llama-3.3-70b-versatile"
+        ]
+        
+        success = False
+        for candidate in fallback_candidates:
+            if candidate == selected_model:
+                continue
+            try:
+                logger.info(f"Attempting fallback model: {candidate}")
+                fallback_stream = await litellm.acompletion(
+                    model=candidate,
+                    messages=messages_to_send,
+                    temperature=0.7,
+                    stream=True,
+                    **extra_kwargs
+                )
+                async for chunk in fallback_stream:
+                    if chunk.choices and len(chunk.choices) > 0:
+                        delta_obj = chunk.choices[0].delta
+                        delta_content = getattr(delta_obj, "content", "") or ""
+                        if delta_content:
+                            full_completion += delta_content
+                            delta_evt = {
+                                "type": "response.text.delta",
+                                "response_id": resp_id,
+                                "item_id": item_id,
+                                "output_index": 0,
+                                "content_index": 0,
+                                "delta": delta_content
+                            }
+                            yield f"data: {json.dumps(delta_evt)}\n\n"
+                            delta_evt_opt = {
+                                "type": "response.output_text.delta",
+                                "response_id": resp_id,
+                                "item_id": item_id,
+                                "output_index": 0,
+                                "content_index": 0,
+                                "delta": delta_content
+                            }
+                            yield f"data: {json.dumps(delta_evt_opt)}\n\n"
 
-                    tool_calls = getattr(delta_obj, "tool_calls", None)
-                    if tool_calls:
-                        for tc in tool_calls:
-                            idx = getattr(tc, "index", 0) or 0
-                            if idx not in active_fn_calls:
-                                call_id = getattr(tc, "id", None) or f"call_{uuid.uuid4().hex[:8]}"
-                                fn_name = getattr(tc.function, "name", "") or ""
-                                fn_item_id = f"item-fn-{request_id}-{idx}"
-                                active_fn_calls[idx] = {
-                                    "item_id": fn_item_id,
-                                    "call_id": call_id,
-                                    "name": fn_name,
-                                    "arguments": ""
-                                }
-                                event_fn_item = {
-                                    "type": "response.output_item.added",
-                                    "response_id": resp_id,
-                                    "output_index": idx + 1,
-                                    "item": {
-                                        "id": fn_item_id,
-                                        "type": "function_call",
+                        tool_calls = getattr(delta_obj, "tool_calls", None)
+                        if tool_calls:
+                            for tc in tool_calls:
+                                idx = getattr(tc, "index", 0) or 0
+                                if idx not in active_fn_calls:
+                                    call_id = getattr(tc, "id", None) or f"call_{uuid.uuid4().hex[:8]}"
+                                    fn_name = getattr(tc.function, "name", "") or ""
+                                    fn_item_id = f"item-fn-{request_id}-{idx}"
+                                    active_fn_calls[idx] = {
+                                        "item_id": fn_item_id,
                                         "call_id": call_id,
                                         "name": fn_name,
                                         "arguments": ""
                                     }
-                                }
-                                yield f"data: {json.dumps(event_fn_item)}\n\n"
+                                    event_fn_item = {
+                                        "type": "response.output_item.added",
+                                        "response_id": resp_id,
+                                        "output_index": idx + 1,
+                                        "item": {
+                                            "id": fn_item_id,
+                                            "type": "function_call",
+                                            "call_id": call_id,
+                                            "name": fn_name,
+                                            "arguments": ""
+                                        }
+                                    }
+                                    yield f"data: {json.dumps(event_fn_item)}\n\n"
 
-                            fn_data = active_fn_calls[idx]
-                            args_delta = getattr(tc.function, "arguments", "") or ""
-                            if args_delta:
-                                fn_data["arguments"] += args_delta
-                                event_fn_delta = {
-                                    "type": "response.function_call_arguments.delta",
-                                    "response_id": resp_id,
-                                    "item_id": fn_data["item_id"],
-                                    "output_index": idx + 1,
-                                    "call_id": fn_data["call_id"],
-                                    "delta": args_delta
-                                }
-                                yield f"data: {json.dumps(event_fn_delta)}\n\n"
-            record_provider_success(fallback_model)
-        except Exception as fallback_err:
-            logger.error(f"Fallback provider '{fallback_model}' also failed: {fallback_err}. Synthesizing agentic fallback response.")
-            prompt_lower = original_prompt.lower()
-            if "sort" in prompt_lower and "dictionary" in prompt_lower:
-                full_completion = (
-                    "Here is the Python script to sort a list of dictionaries by key:\n\n"
-                    "```python\n"
-                    "# Sample list of dictionaries\n"
-                    "data = [\n"
-                    "    {'name': 'Alice', 'age': 30, 'score': 85},\n"
-                    "    {'name': 'Bob', 'age': 25, 'score': 92},\n"
-                    "    {'name': 'Charlie', 'age': 35, 'score': 78}\n"
-                    "]\n\n"
-                    "# 1. Sort by a specific key ('age')\n"
-                    "sorted_by_age = sorted(data, key=lambda x: x['age'])\n"
-                    "print('Sorted by age:', sorted_by_age)\n\n"
-                    "# 2. Sort in reverse order by 'score'\n"
-                    "sorted_by_score = sorted(data, key=lambda x: x['score'], reverse=True)\n"
-                    "print('Sorted by score (descending):', sorted_by_score)\n"
-                    "```\n"
-                )
-            else:
-                full_completion = (
-                    f"Code Review and System Summary for request: '{original_prompt[:60]}'\n\n"
-                    f"1. Structure & Syntax: All core Python files adhere to PEP 8 standards.\n"
-                    f"2. Security & Auth: Endpoints enforce Bearer API Token validation.\n"
-                    f"3. Performance & Fallbacks: Circuit breaker and rate-limit fallbacks active."
-                )
+                                fn_data = active_fn_calls[idx]
+                                args_delta = getattr(tc.function, "arguments", "") or ""
+                                if args_delta:
+                                    fn_data["arguments"] += args_delta
+                                    event_fn_delta = {
+                                        "type": "response.function_call_arguments.delta",
+                                        "response_id": resp_id,
+                                        "item_id": fn_data["item_id"],
+                                        "output_index": idx + 1,
+                                        "call_id": fn_data["call_id"],
+                                        "delta": args_delta
+                                    }
+                                    yield f"data: {json.dumps(event_fn_delta)}\n\n"
+                record_provider_success(candidate)
+                success = True
+                break
+            except Exception as candidate_err:
+                logger.warning(f"Candidate '{candidate}' failed: {candidate_err}")
+                continue
+
+        if not success:
+            logger.error("All model candidates exhausted. Generating dynamic response.")
+            full_completion = f"Processed request for: '{original_prompt}'. All configured target model providers returned rate-limit limits."
             words = full_completion.split(" ")
             for idx, word in enumerate(words):
                 delta = word if idx == len(words) - 1 else word + " "

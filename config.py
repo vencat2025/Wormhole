@@ -21,7 +21,7 @@ class Settings:
     ENHANCER_MODEL: str = os.getenv("ENHANCER_MODEL", "groq/llama-3.3-70b-versatile")
     ROUTER_MODEL: str = os.getenv("ROUTER_MODEL", "groq/llama-3.3-70b-versatile")
     JUDGE_MODEL: str = os.getenv("JUDGE_MODEL", "groq/llama-3.3-70b-versatile")
-    FALLBACK_MODEL: str = os.getenv("FALLBACK_MODEL", "gpt-4o-mini")
+    FALLBACK_MODEL: str = os.getenv("FALLBACK_MODEL", "groq/llama-3.1-8b-instant")
 
     # Default API Keys
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")

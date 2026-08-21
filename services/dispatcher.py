@@ -35,16 +35,31 @@ def extract_tool_calls_from_text(text: str) -> List[Dict[str, Any]]:
         if clean_cmd:
             tool_calls.append({"name": "exec", "arguments": json.dumps({"command": clean_cmd})})
 
-    # 3. Markdown Code Blocks with Filenames (e.g. **index.html:** \n ```html ... ```)
-    md_block_pattern = r"(?:(?:\*\*|###?|File:\s*|[`\"])?\s*([a-zA-Z0-9_\-/\.]+\.[a-zA-Z0-9]+)[:`*]*\s*\n+)?```[a-zA-Z0-9_-]*\n(.*?)```"
-    md_matches = re.findall(md_block_pattern, text, re.DOTALL)
+    # 3. Markdown Code Blocks: find all ```lang \n content ``` blocks and inspect preceding text & first inline comment line
+    blocks = re.findall(r"((?:[^\n]+\n){1,3})?\s*```[a-zA-Z0-9_-]*\n(.*?)```", text, re.DOTALL)
     
-    for filename, code_content in md_matches:
-        filename = (filename or "").strip()
-        filename = re.sub(r"[:`*]", "", filename).strip()
+    for prec_text, code_content in blocks:
         code_content = code_content.strip()
-        
-        if filename and ("." in filename) and not filename.startswith("http") and code_content:
+        if not code_content:
+            continue
+            
+        filename = None
+        # Check first line inside code content for # app.py, // script.js, <!-- index.html -->
+        first_line = code_content.split("\n")[0].strip()
+        comment_fn_match = re.search(r"(?:#|//|<!--|\*)\s*([a-zA-Z0-9_\-/\.]+\.[a-zA-Z0-9]+)\b", first_line)
+        if comment_fn_match:
+            fn = comment_fn_match.group(1).strip()
+            if fn and "." in fn and not fn.startswith("http"):
+                filename = fn
+
+        if not filename and prec_text:
+            fn_matches = re.findall(r"\b([a-zA-Z0-9_\-/\.]+\.[a-zA-Z0-9]+)\b", prec_text)
+            for fn in fn_matches:
+                if fn and not fn.startswith("http") and not fn.endswith(".com") and not fn.endswith(".org"):
+                    filename = fn
+                    break
+
+        if filename:
             existing_files = [json.loads(tc["arguments"]).get("command", "") for tc in tool_calls]
             if not any(f"> {filename}" in ef for ef in existing_files):
                 dir_name = os.path.dirname(filename)

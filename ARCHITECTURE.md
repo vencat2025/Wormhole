@@ -57,7 +57,29 @@ sequenceDiagram
 
 ### 3. Auto-Evaluator (LLM-as-a-Judge)
 - **Role**: Asynchronously grades completion quality against the enhanced prompt on a 1.0 - 10.0 scale.
-- **Feedback Loop**: High-scoring pairs `(Enhanced Prompt, Target Model, Completion, Score)` are persisted to build fine-tuning datasets for training custom student models.
+- **File**: [`services/judge.py`](file:///Users/venkat/Documents/AI/WormHole/services/judge.py)
+- **Feedback Loop**: High-scoring completions (`judge_score >= 7.0`) are persisted to build fine-tuning datasets for training custom student models.
+
+### 4. Dataset Generator & SLM Fine-Tuning Engine
+- **Role**: Exports formatted JSONL training datasets from historical high-scoring inferences.
+- **File**: [`services/dataset.py`](file:///Users/venkat/Documents/AI/WormHole/services/dataset.py)
+- **Continuous Learning Loop**:
+
+```mermaid
+flowchart TD
+    Inference["1. Live Request Executed & Delivered"] --> Judge["2. LLM-as-a-Judge Auto-Evaluator\nAsync Background Task (services/judge.py)"]
+    Judge --> Score["3. Grades Quality (1.0 - 10.0)\n& Stores in SQLite DB"]
+    
+    subgraph DataPipeline ["Dataset Exporter Engine (services/dataset.py)"]
+        Score --> Filter{"Filter Quality\nScore >= 7.0?"}
+        Filter -->|"Yes (High Quality)"| JSONL["4. Export JSONL Fine-Tuning Datasets\n• Enhancer Dataset\n• Router Dataset"]
+        Filter -->|"No"| Discard["Discard Bad Log"]
+    end
+
+    JSONL --> Training["5. Model Fine-Tuning Pipeline\nTrains Student SLMs"]
+    Training --> LocalSLM["6. Update Local SLM (<2ms)\nmodels/router_slm.joblib"]
+    LocalSLM --> Influx["7. Powers Sub-2ms Local Routing\n$0 Cost & Zero Latency!"]
+```
 
 ---
 

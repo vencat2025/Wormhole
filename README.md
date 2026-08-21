@@ -110,6 +110,29 @@ Client applications send standard OpenAI-formatted completion payloads. WormHole
 - Asynchronously grades completion quality on a scale of **1.0 to 10.0**.
 - Persists judge score, feedback, latency, and costs to SQLite database.
 
+### 7. Continuous SLM Self-Improvement & Dataset Exporter
+- **File**: [`services/dataset.py`](file:///Users/venkat/Documents/AI/WormHole/services/dataset.py)
+- Filters high-scoring historical completions (`judge_score >= 7.0`) and exports formatted JSONL fine-tuning datasets for:
+  - **Model 1 (Prompt Enhancer SLM)**: `(Original Prompt → Quality Enhanced Prompt)`
+  - **Model 2 (Router SLM)**: `(Enhanced Prompt → Selected Model ID & Reasoning)`
+- Used to continuously fine-tune local student SLMs (`models/router_slm.joblib`), making routing completely local with **<2ms latency** and **$0 API cost**.
+
+```mermaid
+flowchart TD
+    Inference["1. Live Request Executed & Delivered"] --> Judge["2. LLM-as-a-Judge Auto-Evaluator\nAsync Background Task (services/judge.py)"]
+    Judge --> Score["3. Grades Quality (1.0 - 10.0)\n& Stores in SQLite DB"]
+    
+    subgraph DataPipeline ["Dataset Exporter Engine (services/dataset.py)"]
+        Score --> Filter{"Filter Quality\nScore >= 7.0?"}
+        Filter -->|"Yes (High Quality)"| JSONL["4. Export JSONL Fine-Tuning Datasets\n• Enhancer Dataset\n• Router Dataset"]
+        Filter -->|"No"| Discard["Discard Bad Log"]
+    end
+
+    JSONL --> Training["5. Model Fine-Tuning Pipeline\nTrains Student SLMs"]
+    Training --> LocalSLM["6. Update Local SLM (<2ms)\nmodels/router_slm.joblib"]
+    LocalSLM --> Influx["7. Powers Sub-2ms Local Routing\n$0 Cost & Zero Latency!"]
+```
+
 ---
 
 ## 💰 Candidate Models & Cost Accounting

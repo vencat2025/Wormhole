@@ -142,36 +142,44 @@ async def dispatch_inference(
             
     except Exception as e:
         record_provider_failure(active_model)
-        latency_ms = round((time.time() - start_time) * 1000, 2)
-        logger.warning(f"Target model call failed for '{active_model}' ({e}). Executing prompt-aware fallback response.")
+        logger.warning(f"Target model call failed for '{active_model}' ({e}). Attempting failover candidates.")
         
-        prompt_lower = original_prompt.lower()
-        if "sort" in prompt_lower and "dictionary" in prompt_lower:
-            completion_text = (
-                "Here is the Python script to sort a list of dictionaries by key:\n\n"
-                "```python\n"
-                "# Sample list of dictionaries\n"
-                "data = [\n"
-                "    {'name': 'Alice', 'age': 30, 'score': 85},\n"
-                "    {'name': 'Bob', 'age': 25, 'score': 92},\n"
-                "    {'name': 'Charlie', 'age': 35, 'score': 78}\n"
-                "]\n\n"
-                "# 1. Sort by a specific key ('age')\n"
-                "sorted_by_age = sorted(data, key=lambda x: x['age'])\n"
-                "print('Sorted by age:', sorted_by_age)\n\n"
-                "# 2. Sort in reverse order by 'score'\n"
-                "sorted_by_score = sorted(data, key=lambda x: x['score'], reverse=True)\n"
-                "print('Sorted by score (descending):', sorted_by_score)\n"
-                "```\n"
-            )
-        else:
-            completion_text = (
-                f"Here is the synthesized response to your request:\n\n"
-                f"```python\n"
-                f"# Utility Script\n"
-                f"print('Execution completed for request: {original_prompt[:60]}')\n"
-                f"```\n"
-            )
+        fallback_candidates = [
+            "groq/llama-3.1-8b-instant",
+            "groq/llama-3.3-70b-versatile",
+            "gpt-4o-mini",
+            "gpt-4o"
+        ]
+        
+        success = False
+        for candidate in fallback_candidates:
+            if candidate == active_model:
+                continue
+            try:
+                logger.info(f"Attempting non-streaming fallback model: {candidate}")
+                fb_kwargs = dict(extra_kwargs)
+                if candidate.startswith("groq/"):
+                    fb_kwargs.pop("tools", None)
+                    fb_kwargs.pop("tool_choice", None)
+                response = await litellm.acompletion(
+                    model=candidate,
+                    messages=messages_to_send,
+                    temperature=0.7,
+                    **fb_kwargs
+                )
+                choice = response.choices[0]
+                completion_text = choice.message.content or ""
+                active_model = candidate
+                success = True
+                record_provider_success(candidate)
+                break
+            except Exception as fb_err:
+                logger.warning(f"Candidate '{candidate}' failed: {fb_err}")
+                
+        if not success:
+            completion_text = f"Processed request for: '{original_prompt}'. All configured target model providers returned rate-limit limits."
+        
+        latency_ms = round((time.time() - start_time) * 1000, 2)
         prompt_tokens = len(enhanced_prompt) // 4
         completion_tokens = len(completion_text) // 4
 
@@ -620,7 +628,9 @@ async def dispatch_responses_streaming_inference(
         
         fallback_candidates = [
             "groq/llama-3.1-8b-instant",
-            "groq/llama-3.3-70b-versatile"
+            "groq/llama-3.3-70b-versatile",
+            "gpt-4o-mini",
+            "gpt-4o"
         ]
         
         success = False

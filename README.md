@@ -137,16 +137,26 @@ WormHole uses dedicated training pipelines in [`models/`](file:///Users/venkat/D
    - **Inference Latency**: **< 1 millisecond** (saved to [`models/enhancer_slm.joblib`](file:///Users/venkat/Documents/AI/WormHole/models/enhancer_slm.joblib)).
    - **Retraining Command**: `.venv/bin/python models/train_enhancer.py`
 
+### 9. Bootstrapping SLMs with Public Online Benchmarks
+
+Before live traffic is processed, WormHole's Router SLM is bootstrapped and pretrained on empirical performance profiles from public online AI benchmarks ([`scripts/build_benchmark_dataset.py`](file:///Users/venkat/Documents/AI/WormHole/scripts/build_benchmark_dataset.py)):
+
+- **Benchmarks Integrated**: `HumanEval`, `MBPP` (Simple Code), `SWE-bench`, `LiveCodeBench` (Complex Software Architecture), `GSM8K`, `MATH` (Math Reasoning), `GPQA`, `MMLU` (Graduate Knowledge), and `IFEval` (Strict Formatting).
+- **Optimization Strategy**: 
+  - Filter candidate models achieving **$\ge 75\%$ pass rate** on the specific task domain.
+  - Select the model with the **lowest input/output token cost**.
+- **Cold-Start Deployment**: Enables sub-2ms local SLM routing with 0 cloud API overhead out-of-the-box on Day 1.
+
 ```mermaid
 flowchart TD
-    DB[("SQLite Database\n(InferenceLogs)")] --> Exporter["services/dataset.py\nFilter judge_score >= 7.0"]
-    Exporter --> JSONL["Exported Fine-Tuning JSONL"]
+    PublicData["1. Public Online Benchmarks\n(HumanEval, SWE-bench, GSM8K, MMLU, IFEval)"] --> Matrix["2. Empirical Performance Matrix\nPass rates % per model & domain"]
+    Matrix --> Generator["3. Benchmark Dataset Generator\n(scripts/build_benchmark_dataset.py)"]
+    Generator --> JSON["4. frontier_benchmark_dataset.json\n(2,000 benchmark prompt samples)"]
     
-    JSONL --> RouterTrain["models/train_router.py\nGradient Boosting Classifier"]
-    JSONL --> EnhancerTrain["models/train_enhancer.py\nTF-IDF + Cosine KNN / LoRA"]
+    JSON --> Trainer["5. Router SLM Trainer\n(models/train_router.py)"]
+    Trainer --> Model["6. Initial Local Router SLM\n(models/router_slm.joblib)"]
     
-    RouterTrain --> RouterJoblib["models/router_slm.joblib\n(<2ms Routing)"]
-    EnhancerTrain --> EnhancerJoblib["models/enhancer_slm.joblib\n(<1ms Enhancement)"]
+    Model --> ColdStart["7. Sub-2ms Local Routing Out-of-the-Box\n($0 Cloud Overhead on Day 1)"]
 ```
 
 ---

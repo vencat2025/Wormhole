@@ -128,6 +128,8 @@ async def dispatch_inference(
         extra_kwargs = {}
         if active_model.startswith("ollama/"):
             extra_kwargs["api_base"] = "http://127.0.0.1:11434"
+        if active_model.startswith("groq/"):
+            extra_kwargs["reasoning_format"] = "hidden"
         if tools and not active_model.startswith("groq/"):
             extra_kwargs["tools"] = tools
             if tool_choice and tool_choice != "none":
@@ -471,6 +473,8 @@ async def dispatch_responses_streaming_inference(
         extra_kwargs = {}
         if selected_model.startswith("ollama/"):
             extra_kwargs["api_base"] = "http://127.0.0.1:11434"
+        if selected_model.startswith("groq/"):
+            extra_kwargs["reasoning_format"] = "hidden"
         if tools and not selected_model.startswith("groq/"):
             extra_kwargs["tools"] = tools
             if tool_choice and tool_choice != "none":

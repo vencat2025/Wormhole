@@ -12,10 +12,38 @@ It introduces a dual-model intermediate layer between your client application ha
 
 ## 🏗️ Architecture & System Flow
 
+## ⚡ 60-Second Explanation (How to Explain to a Friend)
+
+> **Think of WormHole like a Smart Gateway for AI Coding Agents.**
+> When you ask Codex CLI to *"Create an app"* or *"Fix a bug"*, instead of sending that request directly to expensive $0.03/req models (like GPT-4o), WormHole intercepts it:
+> 1. **<2ms Router**: Picks the absolute fastest, cheapest open model (like Groq GPT-OSS-120B).
+> 2. **<1ms Enhancer**: Enriches your prompt with explicit context so cheap models behave like frontier models.
+> 3. **0ms Reasoning Suppressor**: Bypasses slow `<think>` tags so completions stream instantly in <1s.
+> 4. **Stream Tool Engine**: Automatically turns code output into native terminal commands (`exec`, `mkdir`, `cat << 'EOF' > file`) so Codex CLI creates files live in your workspace.
+
+```mermaid
+flowchart LR
+    User["👤 User in Codex CLI\n'Create an image app'"] --> GW["⚡ WormHole Gateway"]
+    
+    subgraph WormHoleCore ["WormHole Sub-2ms Intelligence Core"]
+        GW --> Router["1. Router SLM (<2ms)\nPicks lowest cost model"]
+        Router --> Enhancer["2. Enhancer SLM (<1ms)\nQuality-enriches prompt"]
+        Enhancer --> Suppressor["3. Reasoning Suppressor\nHides <think> tags (0ms delay)"]
+    end
+    
+    Suppressor --> LPUs["🚀 Groq LPU Cloud\n(GPT-OSS-120B / Qwen 3.6)"]
+    LPUs --> StreamEngine["4. Stream Regex Engine\nConverts code blocks -> tool_calls"]
+    StreamEngine --> Terminal["💻 Codex CLI Terminal\nExecutes mkdir & writes files live!"]
+```
+
+---
+
+## 🏗️ Architecture & System Flow
+
 ```mermaid
 graph TD
     %% Client & Gateway
-    Client["Client Application / Harness"] -->|"1. Standard OpenAI Chat Spec"| GW["WormHole FastAPI Gateway"]
+    Client["Client Application / Codex CLI"] -->|"1. Standard OpenAI & Responses API Spec"| GW["WormHole FastAPI Gateway"]
     
     %% Intermediate Layer
     subgraph Intermediate ["WormHole Intermediate Layer"]
@@ -23,26 +51,26 @@ graph TD
         Router -->|"3. Selected Model & Reasoning"| Decision{"Is Budget/Mid-Tier Model?"}
         Decision -->|"Yes (Budget/Mid-Tier)"| Enhancer["Model 1: Prompt Enhancer SLM (<1ms Quality Boost)"]
         Decision -->|"No (Frontier Model)"| Dispatcher["Execution Dispatcher & Cost Engine"]
-        Enhancer -->|"Enhanced Prompt"| Dispatcher
+        Enhancer -->|"Enhanced Prompt + reasoning_format='hidden'"| Dispatcher
     end
     
     %% Target LLMs Fleet
-    subgraph EnterpriseFleet ["Enterprise Candidate Models Fleet"]
+    subgraph EnterpriseFleet ["Enterprise Candidate Models Fleet (Groq LPUs + Cloud)"]
         Dispatcher -->|"4. Dispatches Prompt"| Downstream{"Chosen Model"}
-        Downstream -->|"Option A"| GPT4oMini["GPT-4o Mini - $0.00015 per 1k in"]
-        Downstream -->|"Option B"| Flash["Gemini 1.5 Flash - $0.000075 per 1k in"]
-        Downstream -->|"Option C"| Haiku["Claude 3 Haiku - $0.00025 per 1k in"]
+        Downstream -->|"Option A (Ultra-Fast 120B)"| GPTOSS120B["GPT OSS 120B (Groq) - $0.00015 per 1k in"]
+        Downstream -->|"Option B (Fast 20B)"| GPTOSS20B["GPT OSS 20B (Groq) - $0.000075 per 1k in"]
+        Downstream -->|"Option C (Coding 27B)"| QWEN["Qwen 3.6 27B (Groq) - $0.00010 per 1k in"]
         Downstream -->|"Option D - Frontier"| GPT4o["GPT-4o / Sonnet 3.5 - $0.0025 per 1k in"]
     end
 
     %% Response Delivery
-    GPT4oMini -->|"Completion"| Dispatcher
-    Flash -->|"Completion"| Dispatcher
-    Haiku -->|"Completion"| Dispatcher
-    GPT4o -->|"Completion"| Dispatcher
+    GPTOSS120B -->|"Completion Stream"| StreamEngine["Stream Tool Conversion Engine"]
+    GPTOSS20B -->|"Completion Stream"| StreamEngine
+    QWEN -->|"Completion Stream"| StreamEngine
+    GPT4o -->|"Completion Stream"| StreamEngine
     
-    Dispatcher -->|"5. Completion + Cost Metadata"| GW
-    GW -->|"6. Response Payload"| Client
+    StreamEngine -->|"5. Native function_call Events (mkdir/write)"| GW
+    GW -->|"6. Response SSE Events"| Client
 
     %% Async Feedback & Training Loop
     subgraph FeedbackLoop ["Learning & Auto-Evaluation Loop"]
@@ -56,8 +84,8 @@ graph TD
 
 ## 🔄 Step-by-Step Processing Pipeline
 
-### 1. Request Ingestion (`/v1/chat/completions`)
-Client applications send standard OpenAI-formatted completion payloads. WormHole acts as a drop-in replacement proxy.
+### 1. Request Ingestion (`/v1/responses` & `/v1/chat/completions`)
+Client applications send standard OpenAI-formatted completion payloads. WormHole acts as a drop-in replacement proxy for Codex CLI and web apps.
 
 ### 2. Router Decision (Model 2 Local SLM)
 - **File**: [`services/router.py`](file:///Users/venkat/Documents/AI/WormHole/services/router.py)
@@ -66,29 +94,21 @@ Client applications send standard OpenAI-formatted completion payloads. WormHole
 ### 3. Selective Prompt Enhancement (Model 1 Local SLM)
 - **File**: [`services/enhancer.py`](file:///Users/venkat/Documents/AI/WormHole/services/enhancer.py)
 - **If a Frontier Model is selected** (`gpt-4o`, `claude-3-5-sonnet`): Prompt enhancement is **bypassed** to save unnecessary latency and token overhead.
-- **If a Budget/Mid-Tier Model is selected** (`gpt-4o-mini`, `gemini-1.5-flash`, `llama3.1`): Model 1 quality-enriches the prompt in **< 1 millisecond** so the budget model outputs frontier-level completions.
-- **File**: [`services/enhancer.py`](file:///Users/venkat/Documents/AI/WormHole/services/enhancer.py)
-- Takes terse or unformatted user prompts and enriches them with clear instructions, expected output structure, and edge-case handling guidelines.
-- **Goal**: Quality maximization—ensuring that lower-cost downstream models receive sufficient context to output top-tier code/text.
+- **If a Budget/Mid-Tier Model is selected** (`groq/openai/gpt-oss-120b`, `groq/qwen/qwen3.6-27b`): Model 1 quality-enriches the prompt in **< 1 millisecond** so the budget model outputs frontier-level completions.
 
-### 3. Router Decision (LLM Model 2)
-- **File**: [`services/router.py`](file:///Users/venkat/Documents/AI/WormHole/services/router.py)
-- Inspects the enhanced prompt and matches its complexity against the registered fleet of enterprise models and their token pricing.
-- Outputs structured JSON specifying `selected_model` and `reasoning`.
-
-### 4. Dispatch & Cost Accounting
+### 4. Reasoning Suppression (`reasoning_format="hidden"`)
 - **File**: [`services/dispatcher.py`](file:///Users/venkat/Documents/AI/WormHole/services/dispatcher.py)
-- Executes the API request via **LiteLLM**.
-- Calculates actual input/output token cost vs. baseline cost (cost if routed to `gpt-4o`) and tracks exact dollar and percentage savings.
+- Bypasses internal reasoning/thinking tags (`<think> ... </think>`) on Groq LPUs, eliminating 12s+ token delays and streaming output code blocks immediately from Token #1.
 
-### 5. Asynchronous Auto-Evaluation (LLM-as-a-Judge)
+### 5. Stream Tool Conversion Engine
+- **File**: [`services/dispatcher.py`](file:///Users/venkat/Documents/AI/WormHole/services/dispatcher.py)
+- Intercepts streaming code blocks (`# app.py`, `<!-- templates/index.html -->`, `<exec>`) and converts them in real time into native OpenAI Responses API `function_call` events (`exec`, `mkdir`, `cat << 'EOF' > file`).
+- Codex CLI receives native execution events and creates files live in your workspace.
+
+### 6. Asynchronous Auto-Evaluation (LLM-as-a-Judge)
 - **File**: [`services/judge.py`](file:///Users/venkat/Documents/AI/WormHole/services/judge.py)
 - Asynchronously grades completion quality on a scale of **1.0 to 10.0**.
-- Persists judge score, feedback, latency, and costs to SQLite.
-
-### 6. Learning & Fine-Tuning Dataset Generator
-- **File**: [`services/dataset.py`](file:///Users/venkat/Documents/AI/WormHole/services/dataset.py)
-- Exports high-scoring historical inferences into JSONL format for fine-tuning custom student models for Model 1 (Enhancer) and Model 2 (Router).
+- Persists judge score, feedback, latency, and costs to SQLite database.
 
 ---
 
@@ -96,12 +116,11 @@ Client applications send standard OpenAI-formatted completion payloads. WormHole
 
 | Model ID | Provider | Input Cost / 1k | Output Cost / 1k | Intelligence Tier | Typical Speed |
 |---|---|---|---|---|---|
+| `groq/openai/gpt-oss-120b` | Groq LPU | $0.00015 | $0.00060 | Frontier | Ultra Fast (<0.8s) |
+| `groq/openai/gpt-oss-20b` | Groq LPU | $0.00075 | $0.00030 | High | Ultra Fast (<0.5s) |
+| `groq/qwen/qwen3.6-27b` | Groq LPU | $0.00010 | $0.00040 | High | Fast (<1.0s) |
 | `gpt-4o-mini` | OpenAI | $0.00015 | $0.00060 | Medium | Fast |
-| `gemini/gemini-1.5-flash` | Google | $0.000075 | $0.00030 | Medium | Ultra Fast |
-| `claude-3-haiku-20240307` | Anthropic | $0.00025 | $0.00125 | Medium | Fast |
-| `gemini/gemini-1.5-pro` | Google | $0.00125 | $0.00500 | High | Medium |
 | `gpt-4o` | OpenAI | $0.00250 | $0.01000 | Frontier | Medium |
-| `claude-3-5-sonnet-20240620` | Anthropic | $0.00300 | $0.01500 | Frontier | Medium |
 
 ---
 

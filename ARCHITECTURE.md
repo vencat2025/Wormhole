@@ -4,41 +4,37 @@ This document outlines the detailed architectural breakdown and flow mechanics o
 
 ---
 
-## 🎨 System Flow Diagram
+## 🎨 System Flow Diagram (Codex CLI & Agentic Harness Execution Flow)
 
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Client as Client App / Harness
-    participant Gateway as FastAPI Gateway
-    participant Router as Model 2: Router SLM
-    participant Enhancer as Model 1: Prompt Enhancer SLM
-    participant Dispatcher as Dispatcher & Cost Engine
-    participant Target as Selected Candidate LLM
-    participant Judge as LLM-as-a-Judge
-    participant DB as SQLite DB
+    actor Client as Codex CLI / Client Harness
+    participant Gateway as WormHole Gateway (/v1/responses)
+    participant Router as Model 2: Router SLM (<2ms)
+    participant Enhancer as Model 1: Enhancer SLM (<1ms)
+    participant Dispatcher as Dispatcher Engine
+    participant Groq as Groq LPUs (GPT-OSS-120B)
+    participant Parser as Stream Tool Conversion Engine
+    participant DB as SQLite DB (InferenceLog)
 
-    Client->>Gateway: POST /v1/chat/completions - Raw Prompt
-    Gateway->>Router: route_prompt - raw_prompt (<2ms)
-    Router-->>Gateway: Selected Model ID + Reasoning
-    alt Is Budget/Mid-Tier Model
-        Gateway->>Enhancer: enhance_prompt - raw_prompt (<1ms)
-        Enhancer-->>Gateway: Enhanced Prompt - Quality Boosted
-    else Is Frontier Model
-        Gateway->>Gateway: Bypass Prompt Enhancement
+    Client->>Gateway: POST /v1/responses (Prompt + Tools)
+    Gateway->>Router: route_prompt (<2ms SLM)
+    Router-->>Gateway: Selected Model (groq/openai/gpt-oss-120b) + Reasoning
+    Gateway->>Enhancer: enhance_prompt (<1ms SLM)
+    Enhancer-->>Gateway: Quality-Boosted Enhanced Prompt
+    Gateway->>Dispatcher: dispatch_responses_streaming_inference
+    Note over Dispatcher,Groq: Inject reasoning_format="hidden" (bypasses <think> tags)
+    Dispatcher->>Groq: Stream Completion via LiteLLM
+    Groq-->>Parser: Stream Text Chunks (<0.8s latency)
+    Parser->>Parser: Buffer stream text & extract code files / <exec> tags
+    alt Code Files / Tool Calls Extracted
+        Parser-->>Client: Yield Native response.output_item.added (function_call)
+        Client->>Client: Execute mkdir & write files live in workspace
+    else Regular Q&A
+        Parser-->>Client: Yield response.text.delta stream
     end
-    Gateway->>Dispatcher: dispatch_inference
-    Dispatcher->>Target: Call Target Model API via LiteLLM
-    Target-->>Dispatcher: Completion Response + Usage Tokens
-    Dispatcher->>Dispatcher: Compute Actual Cost vs GPT-4o Baseline Cost
-    Dispatcher->>DB: Log Inference details
-    Dispatcher-->>Gateway: Completion + WormHole Cost Metadata
-    Gateway-->>Client: Response Payload - OpenAI Spec
-    
-    par Async Auto-Evaluation
-        Gateway->>Judge: evaluate_completion
-        Judge-->>DB: Update Log with Judge Quality Score and Feedback
-    end
+    Dispatcher->>DB: Log token cost, latency & savings
 ```
 
 ---

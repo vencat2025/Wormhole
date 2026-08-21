@@ -121,27 +121,32 @@ Client applications send standard OpenAI-formatted completion payloads. WormHole
 - Asynchronously grades completion quality on a scale of **1.0 to 10.0**.
 - Persists judge score, feedback, latency, and costs to SQLite database.
 
-### 7. Continuous SLM Self-Improvement & Dataset Exporter
-- **File**: [`services/dataset.py`](file:///Users/venkat/Documents/AI/WormHole/services/dataset.py)
-- Filters high-scoring historical completions (`judge_score >= 7.0`) and exports formatted JSONL fine-tuning datasets for:
-  - **Model 1 (Prompt Enhancer SLM)**: `(Original Prompt → Quality Enhanced Prompt)`
-  - **Model 2 (Router SLM)**: `(Enhanced Prompt → Selected Model ID & Reasoning)`
-- Used to continuously fine-tune local student SLMs (`models/router_slm.joblib`), making routing completely local with **<2ms latency** and **$0 API cost**.
+### 8. How Local SLMs are Trained and Retrained
+
+WormHole uses dedicated training pipelines in [`models/`](file:///Users/venkat/Documents/AI/WormHole/models) to train and continuously retrain lightweight local SLMs from high-scoring historical completions (`judge_score >= 7.0`):
+
+1. **Router SLM Training (`models/train_router.py`)**:
+   - **Architecture**: N-gram TF-IDF Vectorizer + Gradient Boosting Classifier (or PyTorch/DistilBERT).
+   - **Training Data**: High-scoring historical prompts mapped to their optimal `selected_model`.
+   - **Inference Latency**: **< 2 milliseconds** (saved to [`models/router_slm.joblib`](file:///Users/venkat/Documents/AI/WormHole/models/router_slm.joblib)).
+   - **Retraining Command**: `.venv/bin/python models/train_router.py`
+
+2. **Enhancer SLM Training (`models/train_enhancer.py`)**:
+   - **Architecture**: Cosine Nearest-Neighbors TF-IDF Vectorizer / Local LoRA Student SLM.
+   - **Training Data**: Terse raw prompts mapped to high-scoring enhanced completions.
+   - **Inference Latency**: **< 1 millisecond** (saved to [`models/enhancer_slm.joblib`](file:///Users/venkat/Documents/AI/WormHole/models/enhancer_slm.joblib)).
+   - **Retraining Command**: `.venv/bin/python models/train_enhancer.py`
 
 ```mermaid
 flowchart TD
-    Inference["1. Live Request Executed & Delivered"] --> Judge["2. LLM-as-a-Judge Auto-Evaluator\nAsync Background Task (services/judge.py)"]
-    Judge --> Score["3. Grades Quality (1.0 - 10.0)\n& Stores in SQLite DB"]
+    DB[("SQLite Database\n(InferenceLogs)")] --> Exporter["services/dataset.py\nFilter judge_score >= 7.0"]
+    Exporter --> JSONL["Exported Fine-Tuning JSONL"]
     
-    subgraph DataPipeline ["Dataset Exporter Engine (services/dataset.py)"]
-        Score --> Filter{"Filter Quality\nScore >= 7.0?"}
-        Filter -->|"Yes (High Quality)"| JSONL["4. Export JSONL Fine-Tuning Datasets\n• Enhancer Dataset\n• Router Dataset"]
-        Filter -->|"No"| Discard["Discard Bad Log"]
-    end
-
-    JSONL --> Training["5. Model Fine-Tuning Pipeline\nTrains Student SLMs"]
-    Training --> LocalSLM["6. Update Local SLM (<2ms)\nmodels/router_slm.joblib"]
-    LocalSLM --> Influx["7. Powers Sub-2ms Local Routing\n$0 Cost & Zero Latency!"]
+    JSONL --> RouterTrain["models/train_router.py\nGradient Boosting Classifier"]
+    JSONL --> EnhancerTrain["models/train_enhancer.py\nTF-IDF + Cosine KNN / LoRA"]
+    
+    RouterTrain --> RouterJoblib["models/router_slm.joblib\n(<2ms Routing)"]
+    EnhancerTrain --> EnhancerJoblib["models/enhancer_slm.joblib\n(<1ms Enhancement)"]
 ```
 
 ---

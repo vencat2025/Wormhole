@@ -27,14 +27,14 @@ def create_frame_title():
     draw_header(draw)
     
     # Hero Title
-    draw.text((50, 140), "WormHole AI Inference Gateway", fill=(255, 255, 255), font_size=36)
-    draw.text((50, 190), "Enterprise Cost Optimization & Agentic Tool Execution Flywheel", fill=SUBTEXT_COLOR, font_size=20)
+    draw.text((50, 140), "WormHole Universal AI Inference Gateway", fill=(255, 255, 255), font_size=36)
+    draw.text((50, 190), "100% Provider-Agnostic (Groq, OpenAI, Anthropic, Gemini, Ollama)", fill=SUBTEXT_COLOR, font_size=20)
     
     # Feature Boxes
     boxes = [
-        ("✨ Model 1: Local Enhancer SLM", "Enriches prompts for quality in <1ms"),
+        ("🔌 Provider-Agnostic Core", "Routes to Groq, OpenAI, Claude, Gemini & Ollama"),
         ("🎯 Model 2: Local Router SLM", "Routes tasks via sub-2ms SLMs (<$0 cost)"),
-        ("⚡ Reasoning Suppressor", "Hides <think> tags for sub-second streaming"),
+        ("✨ Model 1: Local Enhancer SLM", "Enriches prompts for quality in <1ms"),
         ("🛠️ Stream Tool Engine", "Converts code -> native CLI tool_calls (exec)")
     ]
     
@@ -64,7 +64,7 @@ def create_frame_terminal_case(case_num, prompt_text, model, cost_act, cost_base
         (f"📥 PROMPT: \"{prompt_text}\"", TEXT_COLOR),
         ("✨ Model 1 (Enhancer SLM): Quality enriched prompt in <1ms", ACCENT_COLOR),
         (f"🎯 Model 2 (Router SLM): Selected '{model}' (<2ms inference)", GREEN_COLOR),
-        ("⚡ Reasoning Suppressor: Bypassed <think> tags (0ms delay)", SUBTEXT_COLOR),
+        ("🔌 Provider Gateway: Dispatched via LiteLLM Multi-Provider Engine", SUBTEXT_COLOR),
         ("🛠️ Tool Engine: Extracted 4 tool_calls (mkdir static / write app.py)", GREEN_COLOR),
         (f"💰 Actual API Cost:   ${cost_act:.6f}  (GPT-4o Baseline: ${cost_base:.6f})", TEXT_COLOR),
         (f"🎉 NET SAVINGS:        ${(cost_base - cost_act):.6f} ({pct_saved}% Saved!)", GREEN_COLOR)
@@ -108,9 +108,9 @@ def create_frame_dashboard(savings_str="$0.0258", pct_str="93.4%", requests_cnt=
     draw.text((800, 232), "JUDGE SCORE", fill=SUBTEXT_COLOR, font_size=13)
     
     rows = [
-        ("wh-a1b2c3", "Create an app to display an image...", "gpt-oss-120b", "Saved $0.002140 (94.0%)", "★ 9.0/10"),
-        ("wh-d4e5f6", "Write Python palindrome function...", "gpt-oss-20b", "Saved $0.000726 (97.1%)", "★ 8.8/10"),
-        ("wh-7g8h9i", "Design distributed locking system...", "qwen3.6-27b", "Saved $0.000847 (96.5%)", "★ 8.7/10")
+        ("wh-a1b2c3", "Create an app to display an image...", "groq/gpt-oss-120b", "Saved $0.002140 (94.0%)", "★ 9.0/10"),
+        ("wh-d4e5f6", "Format JSON payload...", "gpt-4o-mini", "Saved $0.000726 (97.1%)", "★ 8.8/10"),
+        ("wh-7g8h9i", "Refactor authentication handler...", "claude-3-5-sonnet", "Saved $0.000000 (Frontier)", "★ 9.5/10")
     ]
     
     y = 280

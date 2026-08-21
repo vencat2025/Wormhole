@@ -13,20 +13,20 @@ sequenceDiagram
     participant Gateway as WormHole Gateway (/v1/responses)
     participant Router as Model 2: Router SLM (<2ms)
     participant Enhancer as Model 1: Enhancer SLM (<1ms)
-    participant Dispatcher as Dispatcher Engine
-    participant Groq as Groq LPUs (GPT-OSS-120B)
+    participant Dispatcher as Dispatcher Engine (LiteLLM)
+    participant Target as Selected Provider (Groq / OpenAI / Anthropic / Gemini / Ollama / vLLM)
     participant Parser as Stream Tool Conversion Engine
     participant DB as SQLite DB (InferenceLog)
 
     Client->>Gateway: POST /v1/responses (Prompt + Tools)
     Gateway->>Router: route_prompt (<2ms SLM)
-    Router-->>Gateway: Selected Model (groq/openai/gpt-oss-120b) + Reasoning
+    Router-->>Gateway: Selected Model (e.g. groq/openai/gpt-oss-120b or gpt-4o-mini) + Reasoning
     Gateway->>Enhancer: enhance_prompt (<1ms SLM)
     Enhancer-->>Gateway: Quality-Boosted Enhanced Prompt
     Gateway->>Dispatcher: dispatch_responses_streaming_inference
-    Note over Dispatcher,Groq: Inject reasoning_format="hidden" (bypasses <think> tags)
-    Dispatcher->>Groq: Stream Completion via LiteLLM
-    Groq-->>Parser: Stream Text Chunks (<0.8s latency)
+    Note over Dispatcher,Target: Normalize provider flags (e.g. reasoning_format="hidden")
+    Dispatcher->>Target: Stream Completion via LiteLLM API
+    Target-->>Parser: Stream Text Chunks (<0.8s latency)
     Parser->>Parser: Buffer stream text & extract code files / <exec> tags
     alt Code Files / Tool Calls Extracted
         Parser-->>Client: Yield Native response.output_item.added (function_call)

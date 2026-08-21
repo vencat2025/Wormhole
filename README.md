@@ -1,6 +1,8 @@
 # WormHole — Enterprise AI Inference Cost Reducer
 
-**WormHole** is an enterprise AI inference middleware layer designed to drastically reduce LLM API spend while preserving or elevating completion quality. 
+**WormHole** is a **100% Provider-Agnostic** enterprise AI inference middleware layer designed to drastically reduce LLM API spend while preserving or elevating completion quality. 
+
+> 🔌 **Universal Multi-Provider Support**: WormHole acts as a drop-in proxy for **ANY downstream LLM provider or custom endpoint**—including **Groq LPUs**, **OpenAI**, **Anthropic Claude**, **Google Gemini**, **Local Ollama**, or **Self-Hosted vLLM / TGI Clusters**.
 
 ![WormHole Automated Demo Recording](docs/wormhole_demo.gif)
 
@@ -10,20 +12,18 @@ It introduces a dual-model intermediate layer between your client application ha
 
 ---
 
-## 🏗️ Architecture & System Flow
-
 ## ⚡ 60-Second Explanation (How to Explain to a Friend)
 
 > **Think of WormHole like a Smart Gateway for AI Coding Agents.**
 > When you ask Codex CLI to *"Create an app"* or *"Fix a bug"*, instead of sending that request directly to expensive $0.03/req models (like GPT-4o), WormHole intercepts it:
-> 1. **<2ms Router**: Picks the absolute fastest, cheapest open model (like Groq GPT-OSS-120B).
+> 1. **<2ms Router**: Picks the absolute fastest, cheapest target model (Groq LPUs, OpenAI mini, local Ollama, or custom endpoints).
 > 2. **<1ms Enhancer**: Enriches your prompt with explicit context so cheap models behave like frontier models.
 > 3. **0ms Reasoning Suppressor**: Bypasses slow `<think>` tags so completions stream instantly in <1s.
 > 4. **Stream Tool Engine**: Automatically turns code output into native terminal commands (`exec`, `mkdir`, `cat << 'EOF' > file`) so Codex CLI creates files live in your workspace.
 
 ```mermaid
 flowchart LR
-    User["👤 User in Codex CLI\n'Create an image app'"] --> GW["⚡ WormHole Gateway"]
+    User["👤 User in Codex CLI / Harness\n'Create an image app'"] --> GW["⚡ WormHole Gateway Proxy"]
     
     subgraph WormHoleCore ["WormHole Sub-2ms Intelligence Core"]
         GW --> Router["1. Router SLM (<2ms)\nPicks lowest cost model"]
@@ -31,8 +31,17 @@ flowchart LR
         Enhancer --> Suppressor["3. Reasoning Suppressor\nHides <think> tags (0ms delay)"]
     end
     
-    Suppressor --> LPUs["🚀 Groq LPU Cloud\n(GPT-OSS-120B / Qwen 3.6)"]
-    LPUs --> StreamEngine["4. Stream Regex Engine\nConverts code blocks -> tool_calls"]
+    Suppressor --> Providers{"🚀 Any Provider Endpoint"}
+    Providers -->|"Option A"| Groq["Groq LPUs\n(GPT-OSS-120B / Qwen)"]
+    Providers -->|"Option B"| OpenAI["OpenAI API\n(gpt-4o-mini / gpt-4o)"]
+    Providers -->|"Option C"| Anthropic["Anthropic Claude / Gemini"]
+    Providers -->|"Option D"| Local["Local Ollama / vLLM Cluster"]
+    
+    Groq --> StreamEngine["4. Stream Regex Engine\nConverts code blocks -> tool_calls"]
+    OpenAI --> StreamEngine
+    Anthropic --> StreamEngine
+    Local --> StreamEngine
+
     StreamEngine --> Terminal["💻 Codex CLI Terminal\nExecutes mkdir & writes files live!"]
 ```
 
@@ -55,19 +64,21 @@ graph TD
     end
     
     %% Target LLMs Fleet
-    subgraph EnterpriseFleet ["Enterprise Candidate Models Fleet (Groq LPUs + Cloud)"]
-        Dispatcher -->|"4. Dispatches Prompt"| Downstream{"Chosen Model"}
-        Downstream -->|"Option A (Ultra-Fast 120B)"| GPTOSS120B["GPT OSS 120B (Groq) - $0.00015 per 1k in"]
-        Downstream -->|"Option B (Fast 20B)"| GPTOSS20B["GPT OSS 20B (Groq) - $0.000075 per 1k in"]
-        Downstream -->|"Option C (Coding 27B)"| QWEN["Qwen 3.6 27B (Groq) - $0.00010 per 1k in"]
-        Downstream -->|"Option D - Frontier"| GPT4o["GPT-4o / Sonnet 3.5 - $0.0025 per 1k in"]
+    subgraph EnterpriseFleet ["Universal Multi-Provider Enterprise Fleet"]
+        Dispatcher -->|"4. Dispatches Prompt via LiteLLM"| Downstream{"Chosen Target Endpoint"}
+        Downstream -->|"Provider 1: Groq LPU"| GPTOSS120B["GPT OSS 120B / Qwen - $0.00015/1k"]
+        Downstream -->|"Provider 2: OpenAI"| GPT4oMini["GPT-4o Mini / GPT-4o - $0.00015/1k"]
+        Downstream -->|"Provider 3: Anthropic"| Claude["Claude 3.5 Sonnet / Haiku - $0.00025/1k"]
+        Downstream -->|"Provider 4: Google"| Gemini["Gemini 2.5 Flash - $0.000075/1k"]
+        Downstream -->|"Provider 5: On-Prem"| Ollama["Local Ollama / vLLM - $0.00/1k"]
     end
 
     %% Response Delivery
     GPTOSS120B -->|"Completion Stream"| StreamEngine["Stream Tool Conversion Engine"]
-    GPTOSS20B -->|"Completion Stream"| StreamEngine
-    QWEN -->|"Completion Stream"| StreamEngine
-    GPT4o -->|"Completion Stream"| StreamEngine
+    GPT4oMini -->|"Completion Stream"| StreamEngine
+    Claude -->|"Completion Stream"| StreamEngine
+    Gemini -->|"Completion Stream"| StreamEngine
+    Ollama -->|"Completion Stream"| StreamEngine
     
     StreamEngine -->|"5. Native function_call Events (mkdir/write)"| GW
     GW -->|"6. Response SSE Events"| Client

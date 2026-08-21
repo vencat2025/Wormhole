@@ -28,14 +28,14 @@ def create_frame_title():
     
     # Hero Title
     draw.text((50, 140), "WormHole AI Inference Gateway", fill=(255, 255, 255), font_size=36)
-    draw.text((50, 190), "Enterprise Cost Optimization & Quality Flywheel", fill=SUBTEXT_COLOR, font_size=20)
+    draw.text((50, 190), "Enterprise Cost Optimization & Agentic Tool Execution Flywheel", fill=SUBTEXT_COLOR, font_size=20)
     
     # Feature Boxes
     boxes = [
         ("✨ Model 1: Local Enhancer SLM", "Enriches prompts for quality in <1ms"),
         ("🎯 Model 2: Local Router SLM", "Routes tasks via sub-2ms SLMs (<$0 cost)"),
-        ("⚖️ LLM-as-a-Judge", "Auto-evaluates quality on 1.0-10.0 scale"),
-        ("🎓 Fine-Tuning Flywheel", "Exports JSONL datasets for local retraining")
+        ("⚡ Reasoning Suppressor", "Hides <think> tags for sub-second streaming"),
+        ("🛠️ Stream Tool Engine", "Converts code -> native CLI tool_calls (exec)")
     ]
     
     for idx, (b_title, b_sub) in enumerate(boxes):
@@ -50,7 +50,7 @@ def create_frame_title():
 def create_frame_terminal_case(case_num, prompt_text, model, cost_act, cost_base, pct_saved):
     img = Image.new("RGB", (WIDTH, HEIGHT), color=BACKGROUND_COLOR)
     draw = ImageDraw.Draw(img)
-    draw_header(draw, f"⚡ DEMO CASE {case_num}: REAL-TIME SLM ROUTING")
+    draw_header(draw, f"⚡ DEMO CASE {case_num}: REAL-TIME AGENTIC TOOL EXECUTION")
     
     # Terminal Window
     draw.rectangle([40, 90, WIDTH - 40, HEIGHT - 40], fill=(15, 23, 42), outline=BORDER_COLOR, width=2)
@@ -58,15 +58,15 @@ def create_frame_terminal_case(case_num, prompt_text, model, cost_act, cost_base
     draw.ellipse([55, 103, 67, 115], fill=(239, 68, 68))
     draw.ellipse([75, 103, 87, 115], fill=(245, 158, 11))
     draw.ellipse([95, 103, 107, 115], fill=(34, 197, 94))
-    draw.text((120, 100), "bash - wormhole client_harness", fill=SUBTEXT_COLOR, font_size=14)
+    draw.text((120, 100), "codex - wormhole responses_api_harness", fill=SUBTEXT_COLOR, font_size=14)
     
     lines = [
-        (f"📥 INPUT PROMPT: \"{prompt_text}\"", TEXT_COLOR),
+        (f"📥 PROMPT: \"{prompt_text}\"", TEXT_COLOR),
         ("✨ Model 1 (Enhancer SLM): Quality enriched prompt in <1ms", ACCENT_COLOR),
         (f"🎯 Model 2 (Router SLM): Selected '{model}' (<2ms inference)", GREEN_COLOR),
-        (f"💡 Router Reasoning: Matched frontier benchmark pass rate requirements.", SUBTEXT_COLOR),
-        (f"💰 Actual API Cost:   ${cost_act:.6f}", TEXT_COLOR),
-        (f"📊 Baseline Cost (GPT-4o): ${cost_base:.6f}", SUBTEXT_COLOR),
+        ("⚡ Reasoning Suppressor: Bypassed <think> tags (0ms delay)", SUBTEXT_COLOR),
+        ("🛠️ Tool Engine: Extracted 4 tool_calls (mkdir static / write app.py)", GREEN_COLOR),
+        (f"💰 Actual API Cost:   ${cost_act:.6f}  (GPT-4o Baseline: ${cost_base:.6f})", TEXT_COLOR),
         (f"🎉 NET SAVINGS:        ${(cost_base - cost_act):.6f} ({pct_saved}% Saved!)", GREEN_COLOR)
     ]
     
@@ -77,7 +77,7 @@ def create_frame_terminal_case(case_num, prompt_text, model, cost_act, cost_base
         
     return img
 
-def create_frame_dashboard(savings_str="$0.0258", pct_str="93.4%", requests_cnt="41"):
+def create_frame_dashboard(savings_str="$0.0258", pct_str="93.4%", requests_cnt="48"):
     img = Image.new("RGB", (WIDTH, HEIGHT), color=BACKGROUND_COLOR)
     draw = ImageDraw.Draw(img)
     draw_header(draw, "⚡ WORMHOLE LIVE WEB DASHBOARD (http://127.0.0.1:8000)")
@@ -87,7 +87,7 @@ def create_frame_dashboard(savings_str="$0.0258", pct_str="93.4%", requests_cnt=
         ("TOTAL REQUESTS", requests_cnt, "Active Gateway"),
         ("TOTAL SAVINGS", savings_str, f"{pct_str} vs GPT-4o"),
         ("ACTUAL SPEND", "$0.0018", "Baseline: $0.0276"),
-        ("AVG JUDGE SCORE", "8.5 / 10", "Auto-Evaluated")
+        ("AVG JUDGE SCORE", "8.8 / 10", "Auto-Evaluated")
     ]
     
     for idx, (title, val, sub) in enumerate(cards):
@@ -108,9 +108,9 @@ def create_frame_dashboard(savings_str="$0.0258", pct_str="93.4%", requests_cnt=
     draw.text((800, 232), "JUDGE SCORE", fill=SUBTEXT_COLOR, font_size=13)
     
     rows = [
-        ("wh-a1b2c3", "Format JSON array of colors...", "gemini-1.5-flash", "Saved $0.000698 (96.9%)", "★ 8.5/10"),
-        ("wh-d4e5f6", "Write Python palindrome function...", "gemini-1.5-flash", "Saved $0.000726 (97.1%)", "★ 8.5/10"),
-        ("wh-7g8h9i", "Design distributed locking system...", "gemini-1.5-flash", "Saved $0.000847 (97.0%)", "★ 8.5/10")
+        ("wh-a1b2c3", "Create an app to display an image...", "gpt-oss-120b", "Saved $0.002140 (94.0%)", "★ 9.0/10"),
+        ("wh-d4e5f6", "Write Python palindrome function...", "gpt-oss-20b", "Saved $0.000726 (97.1%)", "★ 8.8/10"),
+        ("wh-7g8h9i", "Design distributed locking system...", "qwen3.6-27b", "Saved $0.000847 (96.5%)", "★ 8.7/10")
     ]
     
     y = 280
@@ -135,12 +135,12 @@ def generate_video():
         frames.append(title_frame)
         
     # 2. Case 1 (Hold for 3 seconds)
-    c1 = create_frame_terminal_case(1, "Format a JSON array containing top 3 primary colors.", "gemini-1.5-flash", 0.000022, 0.000720, 96.9)
+    c1 = create_frame_terminal_case(1, "Can you create an app to simply display an image on a web page?", "groq/openai/gpt-oss-120b", 0.000135, 0.002250, 94.0)
     for _ in range(15):
         frames.append(c1)
         
     # 3. Case 2 (Hold for 3 seconds)
-    c2 = create_frame_terminal_case(2, "Write a Python palindrome function with unit tests.", "gemini-1.5-flash", 0.000022, 0.000748, 97.1)
+    c2 = create_frame_terminal_case(2, "Write a Python palindrome function with unit tests.", "groq/openai/gpt-oss-20b", 0.000022, 0.000748, 97.1)
     for _ in range(15):
         frames.append(c2)
 

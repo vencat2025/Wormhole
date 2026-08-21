@@ -145,10 +145,9 @@ async def dispatch_inference(
         logger.warning(f"Target model call failed for '{active_model}' ({e}). Attempting failover candidates.")
         
         fallback_candidates = [
-            "groq/llama-3.1-8b-instant",
-            "groq/llama-3.3-70b-versatile",
-            "gpt-4o-mini",
-            "gpt-4o"
+            "groq/openai/gpt-oss-120b",
+            "groq/openai/gpt-oss-20b",
+            "groq/qwen/qwen3.6-27b"
         ]
         
         success = False
@@ -627,10 +626,9 @@ async def dispatch_responses_streaming_inference(
         logger.warning(f"Target model call failed for '{selected_model}' ({e}). Attempting failover candidates.")
         
         fallback_candidates = [
-            "groq/llama-3.1-8b-instant",
-            "groq/llama-3.3-70b-versatile",
-            "gpt-4o-mini",
-            "gpt-4o"
+            "groq/openai/gpt-oss-120b",
+            "groq/openai/gpt-oss-20b",
+            "groq/qwen/qwen3.6-27b"
         ]
         
         success = False

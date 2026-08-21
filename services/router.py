@@ -56,8 +56,8 @@ async def route_prompt(enhanced_prompt: str, model_name: str = None) -> Tuple[st
             predicted_model = local_slm.predict([enhanced_prompt])[0]
             from services.dispatcher import is_circuit_open
             # Smart Provider Validation: if router SLM picks an unconfigured cloud provider or circuit is open, default to groq/llama-3.1-8b-instant
-            if "gemini" in predicted_model.lower() or "gpt" in predicted_model.lower() or is_circuit_open(predicted_model):
-                predicted_model = "groq/llama-3.1-8b-instant"
+            if "gemini" in predicted_model.lower() or is_circuit_open(predicted_model):
+                predicted_model = settings.FALLBACK_MODEL
             reasoning = f"⚡ Fast Local Router SLM (<2ms inference): Selected optimal '{predicted_model}' based on benchmark capability matching."
             return predicted_model, reasoning
         except Exception as slm_err:

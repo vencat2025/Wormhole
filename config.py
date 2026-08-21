@@ -18,10 +18,10 @@ class Settings:
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./wormhole.db")
 
     # Default LLM configuration for the intermediate layer
-    ENHANCER_MODEL: str = os.getenv("ENHANCER_MODEL", "groq/llama-3.3-70b-versatile")
-    ROUTER_MODEL: str = os.getenv("ROUTER_MODEL", "groq/llama-3.3-70b-versatile")
-    JUDGE_MODEL: str = os.getenv("JUDGE_MODEL", "groq/llama-3.3-70b-versatile")
-    FALLBACK_MODEL: str = os.getenv("FALLBACK_MODEL", "groq/llama-3.1-8b-instant")
+    ENHANCER_MODEL: str = os.getenv("ENHANCER_MODEL", "groq/openai/gpt-oss-120b")
+    ROUTER_MODEL: str = os.getenv("ROUTER_MODEL", "groq/openai/gpt-oss-120b")
+    JUDGE_MODEL: str = os.getenv("JUDGE_MODEL", "groq/openai/gpt-oss-120b")
+    FALLBACK_MODEL: str = os.getenv("FALLBACK_MODEL", "groq/openai/gpt-oss-120b")
 
     # Default API Keys
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
@@ -43,22 +43,32 @@ class Settings:
     # Registered Candidate Target Models in Enterprise Fleet (Cloud + Open-Source Local)
     CANDIDATE_MODELS: List[CandidateModelConfig] = [
         CandidateModelConfig(
-            id="groq/llama-3.1-8b-instant",
-            name="Llama 3.1 8B Instant (Groq Cloud)",
+            id="groq/openai/gpt-oss-120b",
+            name="GPT OSS 120B (Groq Cloud)",
             provider="groq",
-            input_cost_per_1k=0.00005,
-            output_cost_per_1k=0.00008,
-            description="Sub-100ms ultra-low latency model for high-throughput execution.",
+            input_cost_per_1k=0.00015,
+            output_cost_per_1k=0.0006,
+            description="Ultra fast 120B frontier model hosted on Groq LPU hardware.",
             speed_tier="ultra-fast",
-            intelligence_tier="medium"
+            intelligence_tier="frontier"
         ),
         CandidateModelConfig(
-            id="groq/llama-3.3-70b-versatile",
-            name="Llama 3.3 70B (Groq Cloud)",
+            id="groq/openai/gpt-oss-20b",
+            name="GPT OSS 20B (Groq Cloud)",
             provider="groq",
-            input_cost_per_1k=0.00059,
-            output_cost_per_1k=0.00079,
-            description="Ultra fast 70B cloud model hosted on Groq LPU hardware with high intelligence and zero latency.",
+            input_cost_per_1k=0.000075,
+            output_cost_per_1k=0.0003,
+            description="High-speed 20B reasoning model hosted on Groq LPU hardware.",
+            speed_tier="ultra-fast",
+            intelligence_tier="high"
+        ),
+        CandidateModelConfig(
+            id="groq/qwen/qwen3.6-27b",
+            name="Qwen 3.6 27B (Groq Cloud)",
+            provider="groq",
+            input_cost_per_1k=0.0001,
+            output_cost_per_1k=0.0004,
+            description="Qwen 3.6 27B model hosted on Groq LPU hardware.",
             speed_tier="fast",
             intelligence_tier="high"
         ),

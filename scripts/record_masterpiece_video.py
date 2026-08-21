@@ -31,13 +31,13 @@ YELLOW_COLOR = (245, 158, 11)       # Amber #f59e0b
 
 # Script covering ALL features & Enterprise integration
 NARRATION_SCRIPT = (
-    "Welcome to WormHole, the complete enterprise AI inference middleware layer designed to cut API spend by over 90 percent while elevating completion quality. "
-    "Standard routers send raw prompts directly to budget models, causing frequent task failures. WormHole solves this with a dual local Small Language Model architecture. "
-    "When a request arrives, Model 2—our local Router SLM—evaluates task complexity in under 2 milliseconds against 10 frontier benchmarks. "
-    "If a frontier model like GPT-4o is selected, prompt enhancement is bypassed to save latency. If a budget model like Gemini Flash or Llama 3.1 is selected, Model 1—our local Enhancer SLM—quality enriches the prompt in under 1 millisecond so the budget model delivers frontier-level completions. "
+    "Welcome to WormHole, the complete provider-agnostic enterprise AI inference middleware layer designed to cut API spend by over 90 percent while elevating completion quality. "
+    "WormHole acts as a drop-in gateway proxy across all downstream models—including Groq LPUs, OpenAI, Anthropic Claude, Google Gemini, and local Ollama. "
+    "When a request arrives, Model 2—our local Router SLM—evaluates task complexity in under 2 milliseconds against 10 public online benchmarks like HumanEval and SWE-bench. "
+    "If a budget model like Groq GPT-OSS-120B or OpenAI mini is selected, Model 1—our local Enhancer SLM—quality enriches the prompt in under 1 millisecond. "
+    "For reasoning models on Groq, WormHole automatically suppresses thinking tags to eliminate latency and stream native agentic tool calls for Codex CLI. "
     "As completions stream back, an asynchronous LLM-as-a-Judge grades quality on a 1 to 10 scale, exporting datasets for 1-click local model retraining. "
-    "WormHole is 100 percent enterprise production ready, featuring Bearer key authentication, SSE token streaming, dual PostgreSQL database support, and automatic circuit breaker failovers. "
-    "Integrating your existing harnesses is effortless. Point Claude Code CLI, Cursor IDE, Aider, or custom OpenAI SDK scripts to WormHole's base URL to immediately slash your enterprise AI costs."
+    "Integrating your existing harnesses is effortless. Point Codex CLI, Cursor IDE, Aider, or custom OpenAI SDK scripts to WormHole's base URL to immediately slash your enterprise AI costs."
 )
 
 async def generate_human_voiceover():
@@ -53,12 +53,12 @@ async def generate_human_voiceover():
     subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     print("✅ Studio Human Voiceover synthesized successfully.")
 
-def draw_header(draw, title="⚡ WORMHOLE — ENTERPRISE AI INFERENCE GATEWAY"):
+def draw_header(draw, title="⚡ WORMHOLE — UNIVERSAL AI INFERENCE GATEWAY"):
     draw.rectangle([0, 0, WIDTH, 100], fill=PANEL_COLOR)
     draw.line([0, 100, WIDTH, 100], fill=BORDER_COLOR, width=3)
     draw.text((40, 30), title, fill=TEXT_COLOR, font_size=32)
     draw.rectangle([WIDTH - 360, 25, WIDTH - 40, 75], fill=GREEN_COLOR)
-    draw.text((WIDTH - 340, 38), "100% PRODUCTION READY", fill=(255, 255, 255), font_size=18)
+    draw.text((WIDTH - 340, 38), "100% PROVIDER AGNOSTIC", fill=(255, 255, 255), font_size=18)
 
 def create_scene_1():
     """Scene 1: Title & Executive Vision"""
@@ -66,14 +66,14 @@ def create_scene_1():
     draw = ImageDraw.Draw(img)
     draw_header(draw)
     
-    draw.text((100, 200), "WormHole Enterprise AI Gateway", fill=(255, 255, 255), font_size=60)
-    draw.text((100, 280), "Sub-2ms Local SLMs  |  90%+ Cost Reductions  |  Closed-Loop Quality Flywheel", fill=CYAN_COLOR, font_size=30)
+    draw.text((100, 200), "WormHole Universal AI Gateway", fill=(255, 255, 255), font_size=60)
+    draw.text((100, 280), "Sub-2ms Local SLMs  |  100% Provider Agnostic  |  Closed-Loop Quality Flywheel", fill=CYAN_COLOR, font_size=30)
     
     cards = [
-        ("✨ Model 1: Local Enhancer SLM", "Enriches prompts for quality in <1ms so budget models achieve frontier pass rates.", ACCENT_COLOR),
-        ("🎯 Model 2: Local Router SLM", "Evaluates task complexity in <2ms against 10+ frontier benchmarks at $0 API cost.", GREEN_COLOR),
-        ("⚖️ LLM-as-a-Judge & Retraining", "Auto-evaluates quality (1.0-10.0) & exports fine-tuning datasets for 1-click retraining.", YELLOW_COLOR),
-        ("🛡️ Enterprise Hardened Subsystem", "Bearer Key Auth, SSE Token Streaming, PostgreSQL HA support & Circuit Breaker failovers.", CYAN_COLOR)
+        ("🔌 Universal Provider-Agnostic Core", "Routes to Groq LPUs, OpenAI, Anthropic Claude, Google Gemini, Ollama & vLLM.", ACCENT_COLOR),
+        ("🎯 Model 2: Local Router SLM", "Evaluates task complexity in <2ms against 10 online benchmarks at $0 API cost.", GREEN_COLOR),
+        ("⚡ Reasoning Suppressor & Tool Engine", "Suppresses <think> tags & streams native OpenAI Responses API function_calls.", YELLOW_COLOR),
+        ("⚖️ LLM-as-a-Judge & Retraining", "Auto-evaluates quality (1.0-10.0) & exports fine-tuning datasets for local SLMs.", CYAN_COLOR)
     ]
     
     for idx, (title, desc, color) in enumerate(cards):
@@ -90,18 +90,18 @@ def create_scene_2():
     """Scene 2: Core Dual-SLM Pipeline & Selective Enhancement"""
     img = Image.new("RGB", (WIDTH, HEIGHT), color=BACKGROUND_COLOR)
     draw = ImageDraw.Draw(img)
-    draw_header(draw, "⚡ SELECTIVE PROMPT ENHANCEMENT & ROUTING PIPELINE")
+    draw_header(draw, "⚡ UNIVERSAL MULTI-PROVIDER & STREAMING TOOL PIPELINE")
     
-    draw.text((100, 150), "Route First  →  Conditional Prompt Enhancement", fill=TEXT_COLOR, font_size=40)
-    draw.text((100, 210), "Eliminates token latency on frontier models while guaranteeing budget model output quality.", fill=SUBTEXT_COLOR, font_size=22)
+    draw.text((100, 150), "Sub-2ms Local SLM Routing  →  Native Responses API Tool Calls", fill=TEXT_COLOR, font_size=40)
+    draw.text((100, 210), "Bypasses reasoning latency on Groq LPUs while streaming execution events to Codex CLI.", fill=SUBTEXT_COLOR, font_size=22)
     
     # Diagram Nodes
     steps = [
-        ("1. Client Request", "Raw Enterprise Prompt", PANEL_COLOR, BORDER_COLOR),
-        ("2. Model 2 Router SLM", "<2ms Local Benchmark Evaluation", ACCENT_COLOR, ACCENT_COLOR),
-        ("3. Model Selected", "Frontier Model vs Budget Model?", PANEL_COLOR, BORDER_COLOR),
-        ("4. Conditional Model 1", "Enhances prompt only if budget model", GREEN_COLOR, GREEN_COLOR),
-        ("5. Target Execution", "Dispatches to Gemini Flash / GPT-4o", PANEL_COLOR, BORDER_COLOR)
+        ("1. Codex CLI Request", "POST /v1/responses (Prompt + Tools)", PANEL_COLOR, BORDER_COLOR),
+        ("2. Model 2 Router SLM", "<2ms Benchmark Evaluation (HumanEval/SWE-bench)", ACCENT_COLOR, ACCENT_COLOR),
+        ("3. Provider Selection", "Groq LPU / OpenAI / Claude / Gemini / Ollama", PANEL_COLOR, BORDER_COLOR),
+        ("4. Stream Tool Engine", "Suppresses <think> tags & converts code -> exec tool_calls", GREEN_COLOR, GREEN_COLOR),
+        ("5. Native Execution", "Codex CLI executes mkdir & writes workspace files live", PANEL_COLOR, BORDER_COLOR)
     ]
     
     for idx, (title, desc, bg, border) in enumerate(steps):
@@ -128,8 +128,8 @@ def create_scene_3():
     
     j_lines = [
         ("• Asynchronous Evaluation", "Grades outputs 1.0 - 10.0 without adding user latency"),
-        ("• Automated Dataset Exporter", "Generates fine-tuning JSONL pairs automatically"),
-        ("• 1-Click Retraining", "POST /api/router/retrain updates decision boundaries"),
+        ("• Automated Dataset Exporter", "Generates fine-tuning JSONL pairs (judge_score >= 7.0)"),
+        ("• Retraining Pipeline", "models/train_router.py & models/train_enhancer.py"),
         ("• Enterprise Audit Logs", "Full history stored in SQLite / PostgreSQL")
     ]
     y_p = 360
@@ -147,7 +147,7 @@ def create_scene_3():
     draw.text((1110, 275), "bash - wormhole retrain_pipeline", fill=SUBTEXT_COLOR, font_size=20)
     
     term_lines = [
-        ("curl -X POST http://127.0.0.1:8000/api/router/retrain", GREEN_COLOR),
+        ("python models/train_router.py", GREEN_COLOR),
         ("[WormHole Retrain] Loading historical inference logs...", SUBTEXT_COLOR),
         ("[WormHole Retrain] Exported 2,000 JSONL fine-tuning pairs.", TEXT_COLOR),
         ("[WormHole Retrain] Training local Gradient Boosting SLM...", ACCENT_COLOR),
@@ -191,11 +191,11 @@ def create_scene_4():
     draw.text((1010, 180), "💻 Drop-in Harness Integration", fill=CYAN_COLOR, font_size=24)
     
     code_lines = [
-        ("# 🤖 CLAUDE CODE CLI:", ACCENT_COLOR),
-        ("export ANTHROPIC_BASE_URL=\"http://127.0.0.1:8000/v1\"", TEXT_COLOR),
-        ("export ANTHROPIC_API_KEY=\"wh_live_demo123456789\"", TEXT_COLOR),
+        ("# 🤖 CODEX CLI / OPENAI HARNESS:", ACCENT_COLOR),
+        ("model_provider = \"wormhole\"", TEXT_COLOR),
+        ("base_url = \"http://127.0.0.1:8000/v1\"", TEXT_COLOR),
         ("", TEXT_COLOR),
-        ("# 💻 CURSOR / OPENAI CODEX / AIDER:", ACCENT_COLOR),
+        ("# 💻 CURSOR / CLAUDE CODE / AIDER:", ACCENT_COLOR),
         ("export OPENAI_BASE_URL=\"http://127.0.0.1:8000/v1\"", TEXT_COLOR),
         ("export OPENAI_API_KEY=\"wh_live_demo123456789\"", TEXT_COLOR),
         ("", TEXT_COLOR),
@@ -216,10 +216,10 @@ def create_scene_5():
     
     # 4 Metric Cards
     cards = [
-        ("TOTAL REQUESTS LOGGED", "49 Requests", "Active Gateway"),
-        ("NET COST SAVINGS", "$0.0326", "94.1% Net Savings vs GPT-4o"),
-        ("ACTUAL API SPEND", "$0.0021", "Baseline: $0.0347"),
-        ("AVG JUDGE QUALITY SCORE", "8.5 / 10.0", "Auto-Evaluated")
+        ("TOTAL REQUESTS LOGGED", "52 Requests", "Active Gateway"),
+        ("NET COST SAVINGS", "$0.0384", "94.4% Net Savings vs GPT-4o"),
+        ("ACTUAL API SPEND", "$0.0023", "Baseline: $0.0407"),
+        ("AVG JUDGE QUALITY SCORE", "8.8 / 10.0", "Auto-Evaluated")
     ]
     
     for idx, (title, val, sub) in enumerate(cards):
@@ -240,10 +240,10 @@ def create_scene_5():
     draw.text((1580, 400), "JUDGE SCORE", fill=SUBTEXT_COLOR, font_size=20)
     
     rows = [
-        ("wh-a1b2c3", "Format JSON array of colors with hex codes...", "gemini-1.5-flash", "Saved $0.000698 (96.9%)", "★ 8.5 / 10"),
-        ("wh-d4e5f6", "Write Python palindrome function with unit tests...", "gemini-1.5-flash", "Saved $0.000726 (97.1%)", "★ 8.5 / 10"),
-        ("wh-7g8h9i", "Design distributed locking system with Redis...", "gemini-1.5-flash", "Saved $0.000847 (97.0%)", "★ 8.5 / 10"),
-        ("wh-strands1", "Strands Multi-Agent Planner Node Task...", "gemini-1.5-flash", "Saved $0.000710 (96.8%)", "★ 8.5 / 10")
+        ("wh-a1b2c3", "Create an app to display an image...", "groq/gpt-oss-120b", "Saved $0.002140 (94.0%)", "★ 9.0 / 10"),
+        ("wh-d4e5f6", "Format JSON payload...", "gpt-4o-mini", "Saved $0.000726 (97.1%)", "★ 8.8 / 10"),
+        ("wh-7g8h9i", "Refactor authentication handler...", "claude-3-5-sonnet", "Saved $0.000000 (Frontier)", "★ 9.5 / 10"),
+        ("wh-strands1", "Strands Multi-Agent Planner Node Task...", "groq/qwen3.6-27b", "Saved $0.000710 (96.8%)", "★ 8.7 / 10")
     ]
     
     r_y = 480

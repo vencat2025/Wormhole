@@ -19,6 +19,13 @@ import os
 def extract_tool_calls_from_text(text: str) -> List[Dict[str, Any]]:
     tool_calls = []
     
+    # 0. Direct shell cat file creation commands (cat << 'EOF' > filename ... EOF)
+    cat_matches = re.findall(r"(cat\s+<<\s*['\"]?EOF['\"]?\s*>\s*([^\n]+).*?EOF)", text, re.DOTALL)
+    for full_cmd, fn in cat_matches:
+        clean_cmd = full_cmd.replace("\\n", "\n").replace("\\\"", "\"").replace("\\\\", "\\").strip()
+        if clean_cmd:
+            tool_calls.append({"name": "exec", "arguments": json.dumps({"command": clean_cmd})})
+
     # 1. XML <exec> command </exec> or <exec>command = "..."</exec>
     exec_matches = re.findall(r'<exec>(.*?)</exec>', text, re.DOTALL)
     for cmd in exec_matches:
@@ -311,6 +318,18 @@ async def dispatch_streaming_inference(
 
     messages_to_send = list(original_messages)
 
+    if tools:
+        agentic_directive = {
+            "role": "system",
+            "content": (
+                "CRITICAL AGENTIC SYSTEM DIRECTIVE: You are executing in an automated software development CLI harness with shell command tool capabilities ('exec'). "
+                "The user wants you to create the files and build the app directly in their workspace NOW. "
+                "DO NOT output conversational explanations, step-by-step tutorial guides, or markdown overviews. "
+                "YOU MUST IMMEDIATELY CALL THE 'exec' TOOL (or output <exec>cat << 'EOF' > index.html ... </exec>) TO CREATE ALL NECESSARY FILES AND DIRECTORIES IN THE WORKSPACE IMMEDIATELY."
+            )
+        }
+        messages_to_send.insert(0, agentic_directive)
+
     role_chunk = {
         "id": f"chatcmpl-{request_id}",
         "object": "chat.completion.chunk",
@@ -321,11 +340,12 @@ async def dispatch_streaming_inference(
     yield f"data: {json.dumps(role_chunk)}\n\n"
 
     full_completion = ""
+    has_native_tool_calls = False
     try:
         extra_kwargs = {}
         if selected_model.startswith("ollama/"):
             extra_kwargs["api_base"] = "http://127.0.0.1:11434"
-        if tools and not selected_model.startswith("groq/"):
+        if tools and (not selected_model.startswith("groq/") or "qwen" in selected_model.lower()) and not "gpt-oss" in selected_model.lower():
             extra_kwargs["tools"] = tools
             if tool_choice and tool_choice != "none":
                 extra_kwargs["tool_choice"] = tool_choice
@@ -345,14 +365,17 @@ async def dispatch_streaming_inference(
                 delta_obj = choice.delta
                 delta_dict = {}
                 if hasattr(delta_obj, "content") and delta_obj.content:
-                    delta_dict["content"] = delta_obj.content
                     full_completion += delta_obj.content
+                    if not tools:
+                        delta_dict["content"] = delta_obj.content
+
                 if hasattr(delta_obj, "tool_calls") and delta_obj.tool_calls:
+                    has_native_tool_calls = True
                     delta_dict["tool_calls"] = [
                         tc.model_dump(exclude_none=True) if hasattr(tc, "model_dump") else dict(tc)
                         for tc in delta_obj.tool_calls
                     ]
-                if hasattr(delta_obj, "role") and delta_obj.role:
+                if hasattr(delta_obj, "role") and delta_obj.role and not tools:
                     delta_dict["role"] = delta_obj.role
 
                 if delta_dict:
@@ -364,9 +387,80 @@ async def dispatch_streaming_inference(
                         "choices": [{"index": 0, "delta": delta_dict, "finish_reason": choice.finish_reason}]
                     }
                     yield f"data: {json.dumps(out_chunk)}\n\n"
+
+        # If no native tool calls were emitted and tools were requested, extract tool calls from completion text
+        if tools and not has_native_tool_calls:
+            extracted = extract_tool_calls_from_text(full_completion)
+            if extracted:
+                logger.info(f"Extracted {len(extracted)} tool calls from completion text stream for Chat Completions API.")
+                for idx, tc in enumerate(extracted):
+                    call_id = f"call_{uuid.uuid4().hex[:8]}"
+                    tool_chunk = {
+                        "id": f"chatcmpl-{request_id}",
+                        "object": "chat.completion.chunk",
+                        "created": created_ts,
+                        "model": selected_model,
+                        "choices": [{
+                            "index": 0,
+                            "delta": {
+                                "tool_calls": [{
+                                    "index": idx,
+                                    "id": call_id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": tc["name"],
+                                        "arguments": tc["arguments"]
+                                    }
+                                }]
+                            },
+                            "finish_reason": "tool_calls" if idx == len(extracted) - 1 else None
+                        }]
+                    }
+                    yield f"data: {json.dumps(tool_chunk)}\n\n"
+            else:
+                # No tool calls extracted; stream buffered text content to client
+                words = full_completion.split(" ")
+                for idx, word in enumerate(words):
+                    delta = word if idx == len(words) - 1 else word + " "
+                    out_chunk = {
+                        "id": f"chatcmpl-{request_id}",
+                        "object": "chat.completion.chunk",
+                        "created": created_ts,
+                        "model": selected_model,
+                        "choices": [{"index": 0, "delta": {"content": delta}, "finish_reason": None}]
+                    }
+                    yield f"data: {json.dumps(out_chunk)}\n\n"
     except Exception as e:
-        logger.warning(f"Target streaming model call failed for '{selected_model}' ({e}). Executing prompt-aware fallback stream.")
-        prompt_lower = original_prompt.lower()
+        logger.warning(f"Target streaming model call failed for '{selected_model}' ({e}). Checking exception payload for tool calls.")
+        extracted_from_err = extract_tool_calls_from_text(str(e))
+        if tools and extracted_from_err:
+            logger.info(f"Extracted {len(extracted_from_err)} tool calls from exception payload for Chat Completions API.")
+            for idx, tc in enumerate(extracted_from_err):
+                call_id = f"call_{uuid.uuid4().hex[:8]}"
+                tool_chunk = {
+                    "id": f"chatcmpl-{request_id}",
+                    "object": "chat.completion.chunk",
+                    "created": created_ts,
+                    "model": selected_model,
+                    "choices": [{
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [{
+                                "index": idx,
+                                "id": call_id,
+                                "type": "function",
+                                "function": {
+                                    "name": tc["name"],
+                                    "arguments": tc["arguments"]
+                                }
+                            }]
+                        },
+                        "finish_reason": "tool_calls" if idx == len(extracted_from_err) - 1 else None
+                    }]
+                }
+                yield f"data: {json.dumps(tool_chunk)}\n\n"
+        else:
+            prompt_lower = original_prompt.lower()
         if "sort" in prompt_lower and "dictionary" in prompt_lower:
             full_completion = (
                 "Here is the Python script to sort a list of dictionaries by key:\n\n"
@@ -524,7 +618,7 @@ async def dispatch_responses_streaming_inference(
         extra_kwargs = {}
         if selected_model.startswith("ollama/"):
             extra_kwargs["api_base"] = "http://127.0.0.1:11434"
-        if tools and not selected_model.startswith("groq/") and not "gpt-oss" in selected_model.lower():
+        if tools and (not selected_model.startswith("groq/") or "qwen" in selected_model.lower()) and not "gpt-oss" in selected_model.lower():
             extra_kwargs["tools"] = tools
             if tool_choice and tool_choice != "none":
                 extra_kwargs["tool_choice"] = tool_choice

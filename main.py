@@ -129,7 +129,7 @@ async def chat_completions(
     original_prompt = extract_clean_text(raw_prompt)
 
     # Step 1: Model 2 - Local Router SLM Decision (<2ms)
-    selected_model, router_reasoning = await route_prompt(original_prompt)
+    selected_model, router_reasoning = await route_prompt(original_prompt, has_tools=bool(request.tools))
 
     # Step 2: Selective Prompt Enhancement (Model 1)
     is_frontier = any(f in selected_model.lower() for f in ["gpt-4o", "sonnet", "gemini-1.5-pro"]) and not "mini" in selected_model.lower()
@@ -390,8 +390,10 @@ async def openai_responses_endpoint(
         if msgs and len(msgs) > 0:
             original_prompt = extract_user_prompt(msgs)
 
+    raw_messages, tools = convert_responses_input_to_messages(raw_request)
+
     # Step 1: Model 2 - Local Router SLM Decision (<2ms)
-    selected_model, router_reasoning = await route_prompt(original_prompt)
+    selected_model, router_reasoning = await route_prompt(original_prompt, has_tools=bool(tools))
 
     # Step 2: Selective Prompt Enhancement (Model 1)
     is_frontier = any(f in selected_model.lower() for f in ["gpt-4o", "sonnet", "gemini-1.5-pro"]) and not "mini" in selected_model.lower()
@@ -401,8 +403,6 @@ async def openai_responses_endpoint(
     else:
         enhanced_prompt = await enhance_prompt(original_prompt)
         router_reasoning += " | Selective Prompt Enhancement Applied (Quality boost for budget model)"
-
-    raw_messages, tools = convert_responses_input_to_messages(raw_request)
 
     if not raw_messages:
         raw_messages = [{"role": "user", "content": enhanced_prompt}]

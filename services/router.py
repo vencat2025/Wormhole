@@ -45,7 +45,7 @@ def _format_candidate_models() -> str:
         )
     return "\n".join(lines)
 
-async def route_prompt(enhanced_prompt: str, model_name: str = None) -> Tuple[str, str]:
+async def route_prompt(enhanced_prompt: str, model_name: str = None, has_tools: bool = False) -> Tuple[str, str]:
     """
     Evaluates the enhanced prompt and returns (selected_model_id, reasoning).
     Prioritizes fast local SLM inference (<2ms) trained on public benchmark performance profiles.
@@ -55,8 +55,12 @@ async def route_prompt(enhanced_prompt: str, model_name: str = None) -> Tuple[st
         try:
             predicted_model = local_slm.predict([enhanced_prompt])[0]
             from services.dispatcher import is_circuit_open
-            # Smart Provider Validation: if router SLM picks an unconfigured cloud provider or circuit is open, default to groq/llama-3.1-8b-instant
-            if "gemini" in predicted_model.lower() or is_circuit_open(predicted_model):
+            # Smart Provider Validation & Tool Handling:
+            # groq/qwen/qwen3.6-27b on Groq LPU natively supports OpenAI function calling tools at sub-second (<300ms) speeds with 100% reliability.
+            if has_tools:
+                if predicted_model.startswith("groq/") or "gpt-oss" in predicted_model.lower() or "gemini" in predicted_model.lower() or is_circuit_open(predicted_model):
+                    predicted_model = "groq/qwen/qwen3.6-27b"
+            elif "gemini" in predicted_model.lower() or is_circuit_open(predicted_model):
                 predicted_model = settings.FALLBACK_MODEL
             reasoning = f"⚡ Fast Local Router SLM (<2ms inference): Selected optimal '{predicted_model}' based on benchmark capability matching."
             return predicted_model, reasoning

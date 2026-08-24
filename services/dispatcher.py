@@ -31,19 +31,21 @@ def extract_tool_calls_from_text(text: str) -> List[Dict[str, Any]]:
     # 2. Parentheses/Brackets (exec) command or [exec] command
     paren_matches = re.findall(r"[\(\[]exec[\)\]]\s*([^\n]+)", text, re.IGNORECASE)
     for cmd in paren_matches:
-        clean_cmd = cmd.strip()
-        if clean_cmd:
+        clean_cmd = cmd.strip().strip("`").strip("'")
+        if clean_cmd and len(clean_cmd) > 1 and not clean_cmd.startswith("`"):
             tool_calls.append({"name": "exec", "arguments": json.dumps({"command": clean_cmd})})
 
-    # 3. Markdown Code Blocks: find all ```lang \n content ``` blocks and inspect preceding text & first inline comment line
-    blocks = re.findall(r"((?:[^\n]+\n){1,3})?\s*```[a-zA-Z0-9_-]*\n(.*?)```", text, re.DOTALL)
+    # 3. Markdown Code Blocks: find all ```lang \n content ``` blocks and extract filename
+    blocks = re.findall(r"((?:[^\n]+\n){1,3})?\s*```([a-zA-Z0-9_-]*)\n(.*?)```", text, re.DOTALL)
     
-    for prec_text, code_content in blocks:
+    for prec_text, lang, code_content in blocks:
         code_content = code_content.strip()
         if not code_content:
             continue
             
         filename = None
+        lang = (lang or "").lower().strip()
+        
         # Check first line inside code content for # app.py, // script.js, <!-- index.html -->
         first_line = code_content.split("\n")[0].strip()
         comment_fn_match = re.search(r"(?:#|//|<!--|\*)\s*([a-zA-Z0-9_\-/\.]+\.[a-zA-Z0-9]+)\b", first_line)
@@ -58,6 +60,19 @@ def extract_tool_calls_from_text(text: str) -> List[Dict[str, Any]]:
                 if fn and not fn.startswith("http") and not fn.endswith(".com") and not fn.endswith(".org"):
                     filename = fn
                     break
+
+        # Fallback intelligent filename inferencing based on code language
+        if not filename:
+            if lang in ["python", "py"]:
+                filename = "app.py"
+            elif lang in ["html"]:
+                filename = "index.html"
+            elif lang in ["javascript", "js", "node"]:
+                filename = "server.js"
+            elif lang in ["bash", "sh", "shell"]:
+                filename = "setup.sh"
+            elif lang in ["json"]:
+                filename = "package.json" if "dependencies" in code_content else "config.json"
 
         if filename:
             existing_files = [json.loads(tc["arguments"]).get("command", "") for tc in tool_calls]
@@ -473,9 +488,7 @@ async def dispatch_responses_streaming_inference(
         extra_kwargs = {}
         if selected_model.startswith("ollama/"):
             extra_kwargs["api_base"] = "http://127.0.0.1:11434"
-        if selected_model.startswith("groq/"):
-            extra_kwargs["reasoning_format"] = "hidden"
-        if tools and not selected_model.startswith("groq/"):
+        if tools and not selected_model.startswith("groq/") and not "gpt-oss" in selected_model.lower():
             extra_kwargs["tools"] = tools
             if tool_choice and tool_choice != "none":
                 extra_kwargs["tool_choice"] = tool_choice
@@ -656,12 +669,22 @@ async def dispatch_responses_streaming_inference(
                 continue
             try:
                 logger.info(f"Attempting fallback model: {candidate}")
+                cand_kwargs = {}
+                if candidate.startswith("ollama/"):
+                    cand_kwargs["api_base"] = "http://127.0.0.1:11434"
+                if tools and not candidate.startswith("groq/") and not "gpt-oss" in candidate.lower():
+                    cand_kwargs["tools"] = tools
+                    if tool_choice and tool_choice != "none":
+                        cand_kwargs["tool_choice"] = tool_choice
+                    else:
+                        cand_kwargs["tool_choice"] = "auto"
+
                 fallback_stream = await litellm.acompletion(
                     model=candidate,
                     messages=messages_to_send,
                     temperature=0.7,
                     stream=True,
-                    **extra_kwargs
+                    **cand_kwargs
                 )
                 async for chunk in fallback_stream:
                     if chunk.choices and len(chunk.choices) > 0:

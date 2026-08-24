@@ -86,18 +86,24 @@ def extract_tool_calls_from_text(text: str) -> List[Dict[str, Any]]:
 
     # 4. Un-fenced HTML / Code Extraction (when models omit ``` fences)
     if not tool_calls:
-        # Check for un-fenced HTML document
-        html_match = re.search(r"(<!DOCTYPE html>.*?</html>|<html.*?>.*?</html>)", text, re.DOTALL | re.IGNORECASE)
-        if html_match:
-            html_code = html_match.group(1).strip()
-            cmd = f"cat << 'EOF' > index.html\n{html_code}\nEOF"
+        # Match all HTML documents in text
+        html_matches = re.findall(r"(<!DOCTYPE html>.*?</html>|<html.*?>.*?</html>)", text, re.DOTALL | re.IGNORECASE)
+        for idx, html_code in enumerate(html_matches):
+            clean_html = html_code.strip()
+            filename = "index.html" if idx == 0 else f"page_{idx+1}.html"
+            cmd = f"cat << 'EOF' > {filename}\n{clean_html}\nEOF"
             tool_calls.append({"name": "exec", "arguments": json.dumps({"command": cmd})})
 
-        # Check for un-fenced Node / Express server code
-        node_match = re.search(r"(const express = require.*?;.*?\napp\.listen\(.*?\);)", text, re.DOTALL)
-        if node_match:
-            node_code = node_match.group(1).strip()
-            cmd = f"cat << 'EOF' > server.js\n{node_code}\nEOF"
+        # Match un-fenced Node / Express server code
+        node_matches = re.findall(r"(const express = require.*?;.*?\napp\.listen\(.*?\);)", text, re.DOTALL)
+        for node_code in node_matches:
+            cmd = f"cat << 'EOF' > server.js\n{node_code.strip()}\nEOF"
+            tool_calls.append({"name": "exec", "arguments": json.dumps({"command": cmd})})
+
+        # Match un-fenced Python Flask app code
+        flask_matches = re.findall(r"(from flask import.*?\napp = Flask.*?\nif __name__ == .__main__.:.*?\n\s+app\.run\(.*?\))", text, re.DOTALL)
+        for py_code in flask_matches:
+            cmd = f"cat << 'EOF' > app.py\n{py_code.strip()}\nEOF"
             tool_calls.append({"name": "exec", "arguments": json.dumps({"command": cmd})})
 
     return tool_calls
@@ -650,10 +656,20 @@ async def dispatch_responses_streaming_inference(
                             "type": "function_call",
                             "call_id": fn_call_id,
                             "name": tc["name"],
-                            "arguments": tc["arguments"]
+                            "arguments": ""
                         }
                     }
                     yield f"data: {json.dumps(event_fn_item)}\n\n"
+
+                    event_fn_delta = {
+                        "type": "response.function_call_arguments.delta",
+                        "response_id": resp_id,
+                        "item_id": fn_item_id,
+                        "output_index": idx + 1,
+                        "call_id": fn_call_id,
+                        "delta": tc["arguments"]
+                    }
+                    yield f"data: {json.dumps(event_fn_delta)}\n\n"
 
                     event_fn_done = {
                         "type": "response.function_call_arguments.done",

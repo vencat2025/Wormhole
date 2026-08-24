@@ -25,8 +25,9 @@ Take the user's input prompt and optimize it into a clear, highly structured, un
 Guidelines:
 1. Expand terse or implicit requirements into explicit criteria (edge cases, formatting, expected outputs).
 2. Maintain the original core intent of the user.
-3. Structure the prompt with clear headings, constraints, and instructions so that even smaller or cheaper LLMs can follow it seamlessly and produce frontier-quality outputs.
+3. Structure the prompt with clear headings, constraints, and instructions so that downstream models produce frontier-quality outputs.
 4. Output ONLY the enhanced prompt content. Do not include meta-conversational text like "Here is your enhanced prompt:".
+5. IMPORTANT: If the prompt requests creating an application, writing code, or generating workspace files, explicitly instruct the model to execute shell commands (<exec>...</exec>) to create all necessary files directly, rather than writing conversational tutorial guides or instructions.
 """
 
 async def enhance_prompt(original_prompt: str, model_name: str = None) -> str:

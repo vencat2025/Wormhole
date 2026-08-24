@@ -482,6 +482,18 @@ async def dispatch_responses_streaming_inference(
 
     messages_to_send = list(original_messages)
 
+    if tools:
+        agentic_directive = {
+            "role": "system",
+            "content": (
+                "CRITICAL AGENTIC SYSTEM DIRECTIVE: You are executing in an automated software development CLI harness with shell command tool capabilities ('exec'). "
+                "The user wants you to create the files and build the app directly in their workspace NOW. "
+                "DO NOT output conversational explanations, step-by-step tutorial guides, or markdown overviews. "
+                "YOU MUST IMMEDIATELY CALL THE 'exec' TOOL (or output <exec>cat << 'EOF' > index.html ... </exec>) TO CREATE ALL NECESSARY FILES AND DIRECTORIES IN THE WORKSPACE IMMEDIATELY."
+            )
+        }
+        messages_to_send.insert(0, agentic_directive)
+
     full_completion = ""
     active_fn_calls = {}
     try:
@@ -510,6 +522,26 @@ async def dispatch_responses_streaming_inference(
                 delta_content = getattr(delta_obj, "content", "") or ""
                 if delta_content:
                     full_completion += delta_content
+                    # Only stream text deltas to client if tools were NOT provided
+                    if not tools:
+                        delta_evt = {
+                            "type": "response.text.delta",
+                            "response_id": resp_id,
+                            "item_id": item_id,
+                            "output_index": 0,
+                            "content_index": 0,
+                            "delta": delta_content
+                        }
+                        yield f"data: {json.dumps(delta_evt)}\n\n"
+                        delta_evt_opt = {
+                            "type": "response.output_text.delta",
+                            "response_id": resp_id,
+                            "item_id": item_id,
+                            "output_index": 0,
+                            "content_index": 0,
+                            "delta": delta_content
+                        }
+                        yield f"data: {json.dumps(delta_evt_opt)}\n\n"
 
                 # B. Function Call / Tool Call Delta
                 tool_calls = getattr(delta_obj, "tool_calls", None)

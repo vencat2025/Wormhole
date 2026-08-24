@@ -6,94 +6,171 @@ from typing import List, Dict, Any
 # Benchmark Performance Matrix (Pass rates % on official public benchmarks)
 BENCHMARK_PROFILES = {
     "HumanEval": {
+        "ollama/qwen2.5-coder:7b": 0.72,
+        "groq/openai/gpt-oss-20b": 0.81,
+        "groq/qwen/qwen3.6-27b": 0.85,
         "gpt-4o-mini": 0.86,
         "gemini/gemini-1.5-flash": 0.79,
         "claude-3-haiku-20240307": 0.75,
+        "groq/openai/gpt-oss-120b": 0.89,
         "gemini/gemini-1.5-pro": 0.88,
         "gpt-4o": 0.90,
-        "claude-3-5-sonnet-20240620": 0.92
+        "claude-3-5-sonnet-20240620": 0.92,
+        "gpt-4.5": 0.94,
+        "gpt-5.4": 0.96,
+        "gpt-5.6": 0.98
     },
     "MBPP": {
+        "ollama/qwen2.5-coder:7b": 0.74,
+        "groq/openai/gpt-oss-20b": 0.83,
+        "groq/qwen/qwen3.6-27b": 0.86,
         "gpt-4o-mini": 0.87,
         "gemini/gemini-1.5-flash": 0.82,
         "claude-3-haiku-20240307": 0.78,
+        "groq/openai/gpt-oss-120b": 0.90,
         "gemini/gemini-1.5-pro": 0.89,
         "gpt-4o": 0.91,
-        "claude-3-5-sonnet-20240620": 0.93
+        "claude-3-5-sonnet-20240620": 0.93,
+        "gpt-4.5": 0.95,
+        "gpt-5.4": 0.97,
+        "gpt-5.6": 0.99
     },
     "SWE-bench": {
+        "ollama/qwen2.5-coder:7b": 0.12,
+        "groq/openai/gpt-oss-20b": 0.19,
+        "groq/qwen/qwen3.6-27b": 0.24,
         "gpt-4o-mini": 0.22,
         "gemini/gemini-1.5-flash": 0.18,
         "claude-3-haiku-20240307": 0.15,
+        "groq/openai/gpt-oss-120b": 0.35,
         "gemini/gemini-1.5-pro": 0.32,
         "gpt-4o": 0.38,
-        "claude-3-5-sonnet-20240620": 0.49
+        "claude-3-5-sonnet-20240620": 0.49,
+        "gpt-4.5": 0.55,
+        "gpt-5.4": 0.64,
+        "gpt-5.6": 0.72
     },
     "LiveCodeBench": {
+        "ollama/qwen2.5-coder:7b": 0.28,
+        "groq/openai/gpt-oss-20b": 0.36,
+        "groq/qwen/qwen3.6-27b": 0.44,
         "gpt-4o-mini": 0.42,
         "gemini/gemini-1.5-flash": 0.35,
         "claude-3-haiku-20240307": 0.30,
+        "groq/openai/gpt-oss-120b": 0.52,
         "gemini/gemini-1.5-pro": 0.48,
         "gpt-4o": 0.54,
-        "claude-3-5-sonnet-20240620": 0.58
+        "claude-3-5-sonnet-20240620": 0.58,
+        "gpt-4.5": 0.65,
+        "gpt-5.4": 0.73,
+        "gpt-5.6": 0.81
     },
     "GSM8K": {
+        "ollama/qwen2.5-coder:7b": 0.78,
+        "groq/openai/gpt-oss-20b": 0.88,
+        "groq/qwen/qwen3.6-27b": 0.90,
         "gpt-4o-mini": 0.91,
         "gemini/gemini-1.5-flash": 0.86,
         "claude-3-haiku-20240307": 0.82,
+        "groq/openai/gpt-oss-120b": 0.94,
         "gemini/gemini-1.5-pro": 0.93,
         "gpt-4o": 0.96,
-        "claude-3-5-sonnet-20240620": 0.96
+        "claude-3-5-sonnet-20240620": 0.96,
+        "gpt-4.5": 0.97,
+        "gpt-5.4": 0.98,
+        "gpt-5.6": 0.99
     },
     "MATH": {
+        "ollama/qwen2.5-coder:7b": 0.45,
+        "groq/openai/gpt-oss-20b": 0.62,
+        "groq/qwen/qwen3.6-27b": 0.68,
         "gpt-4o-mini": 0.70,
         "gemini/gemini-1.5-flash": 0.58,
         "claude-3-haiku-20240307": 0.50,
+        "groq/openai/gpt-oss-120b": 0.75,
         "gemini/gemini-1.5-pro": 0.71,
         "gpt-4o": 0.77,
-        "claude-3-5-sonnet-20240620": 0.78
+        "claude-3-5-sonnet-20240620": 0.78,
+        "gpt-4.5": 0.83,
+        "gpt-5.4": 0.89,
+        "gpt-5.6": 0.94
     },
     "MMLU": {
+        "ollama/qwen2.5-coder:7b": 0.68,
+        "groq/openai/gpt-oss-20b": 0.78,
+        "groq/qwen/qwen3.6-27b": 0.81,
         "gpt-4o-mini": 0.82,
         "gemini/gemini-1.5-flash": 0.79,
         "claude-3-haiku-20240307": 0.75,
+        "groq/openai/gpt-oss-120b": 0.86,
         "gemini/gemini-1.5-pro": 0.85,
         "gpt-4o": 0.88,
-        "claude-3-5-sonnet-20240620": 0.88
+        "claude-3-5-sonnet-20240620": 0.88,
+        "gpt-4.5": 0.91,
+        "gpt-5.4": 0.94,
+        "gpt-5.6": 0.97
     },
     "GPQA": {
+        "ollama/qwen2.5-coder:7b": 0.25,
+        "groq/openai/gpt-oss-20b": 0.35,
+        "groq/qwen/qwen3.6-27b": 0.41,
         "gpt-4o-mini": 0.40,
         "gemini/gemini-1.5-flash": 0.38,
         "claude-3-haiku-20240307": 0.32,
+        "groq/openai/gpt-oss-120b": 0.49,
         "gemini/gemini-1.5-pro": 0.45,
         "gpt-4o": 0.53,
-        "claude-3-5-sonnet-20240620": 0.59
+        "claude-3-5-sonnet-20240620": 0.59,
+        "gpt-4.5": 0.66,
+        "gpt-5.4": 0.74,
+        "gpt-5.6": 0.82
     },
     "ARC-Challenge": {
+        "ollama/qwen2.5-coder:7b": 0.78,
+        "groq/openai/gpt-oss-20b": 0.85,
+        "groq/qwen/qwen3.6-27b": 0.88,
         "gpt-4o-mini": 0.89,
         "gemini/gemini-1.5-flash": 0.86,
         "claude-3-haiku-20240307": 0.84,
+        "groq/openai/gpt-oss-120b": 0.92,
         "gemini/gemini-1.5-pro": 0.91,
         "gpt-4o": 0.94,
-        "claude-3-5-sonnet-20240620": 0.95
+        "claude-3-5-sonnet-20240620": 0.95,
+        "gpt-4.5": 0.96,
+        "gpt-5.4": 0.98,
+        "gpt-5.6": 0.99
     },
     "IFEval": {
+        "ollama/qwen2.5-coder:7b": 0.65,
+        "groq/openai/gpt-oss-20b": 0.75,
+        "groq/qwen/qwen3.6-27b": 0.79,
         "gpt-4o-mini": 0.80,
         "gemini/gemini-1.5-flash": 0.76,
         "claude-3-haiku-20240307": 0.72,
+        "groq/openai/gpt-oss-120b": 0.85,
         "gemini/gemini-1.5-pro": 0.84,
         "gpt-4o": 0.88,
-        "claude-3-5-sonnet-20240620": 0.89
+        "claude-3-5-sonnet-20240620": 0.89,
+        "gpt-4.5": 0.92,
+        "gpt-5.4": 0.95,
+        "gpt-5.6": 0.98
     }
 }
 
 MODEL_INPUT_COSTS = {
+    "ollama/qwen2.5-coder:7b": 0.000000,
     "gemini/gemini-1.5-flash": 0.000075,
-    "gpt-4o-mini": 0.00015,
-    "claude-3-haiku-20240307": 0.00025,
-    "gemini/gemini-1.5-pro": 0.00125,
-    "gpt-4o": 0.00250,
-    "claude-3-5-sonnet-20240620": 0.00300
+    "groq/openai/gpt-oss-20b": 0.000075,
+    "groq/qwen/qwen3.6-27b": 0.000100,
+    "gpt-4o-mini": 0.000150,
+    "groq/openai/gpt-oss-120b": 0.000150,
+    "claude-3-haiku-20240307": 0.000250,
+    "gemini/gemini-1.5-pro": 0.001250,
+    "gpt-4o": 0.002500,
+    "claude-3-5-sonnet-20240620": 0.003000,
+    "gpt-4.5": 0.005000,
+    "gpt-5.4": 0.006000,
+    "gpt-5.6": 0.007500
 }
 
 # Template prompt generators per benchmark category

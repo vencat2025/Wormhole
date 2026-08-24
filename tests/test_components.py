@@ -1,3 +1,4 @@
+import json
 import pytest
 import asyncio
 from config import settings
@@ -91,3 +92,43 @@ async def test_extract_tool_calls_from_text():
     tool_calls_paren = extract_tool_calls_from_text(sample_paren)
     assert len(tool_calls_paren) == 1
     assert "flask new app" in tool_calls_paren[0]["arguments"]
+
+@pytest.mark.asyncio
+async def test_extract_tool_calls_command_execution_and_file_creation():
+    from services.dispatcher import extract_tool_calls_from_text
+    sample_code = """I will create the Flask app now.
+
+```python
+# app.py
+from flask import Flask
+app = Flask(__name__)
+```
+
+```html
+<!-- templates/index.html -->
+<!DOCTYPE html>
+<html><body><h1>Image Viewer</h1></body></html>
+```
+"""
+    tool_calls = extract_tool_calls_from_text(sample_code)
+    assert len(tool_calls) == 2
+    cmds = [json.loads(tc["arguments"])["command"] for tc in tool_calls]
+    assert any("app.py" in c for c in cmds)
+    assert any("templates/index.html" in c for c in cmds)
+
+@pytest.mark.asyncio
+async def test_slm_model_suggestion_and_routing():
+    import json
+    from services.router import route_prompt
+    
+    # 1. Test simple prompt routes to low cost model
+    simple_prompt = "Write a basic Python function to check if a number is prime."
+    model1, reasoning1 = await route_prompt(simple_prompt)
+    assert model1 in [m.id for m in settings.CANDIDATE_MODELS]
+    assert len(reasoning1) > 0
+
+    # 2. Test complex reasoning prompt routes to high intelligence model
+    complex_prompt = "Given an array of integers, find all unique quad tuples that sum to target using O(N^3) optimization and formal proof of quantum correctness for autonomous enterprise system architecture."
+    model2, reasoning2 = await route_prompt(complex_prompt)
+    assert model2 in [m.id for m in settings.CANDIDATE_MODELS]
+    assert any(m in model2 for m in ["gpt-5.6", "gpt-5.4", "gpt-4.5", "gpt-4o", "gpt-oss-120b"])

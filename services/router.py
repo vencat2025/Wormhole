@@ -93,11 +93,11 @@ async def route_prompt(enhanced_prompt: str, model_name: str = None) -> Tuple[st
     except Exception as e:
         logger.warning(f"Router API call failed or unconfigured ({e}). Utilizing fallback heuristic routing.")
         prompt_len = len(enhanced_prompt)
-        has_complex_keywords = any(w in enhanced_prompt.lower() for w in ["architecture", "refactor whole system", "formal proof", "quantum"])
+        has_complex_keywords = any(w in enhanced_prompt.lower() for w in ["architecture", "refactor whole system", "formal proof", "quantum", "gpt-5", "autonomous"])
         
         if has_complex_keywords:
-            selected_model = "gpt-4o"
-            reasoning = "Routed to gpt-4o due to detected high-complexity reasoning keywords."
+            selected_model = "gpt-5.6"
+            reasoning = "Routed to gpt-5.6 due to detected high-complexity reasoning keywords."
         elif prompt_len > 3000:
             selected_model = "gemini/gemini-2.5-flash"
             reasoning = "Routed to Gemini 2.5 Flash due to long context and ultra-low token cost."

@@ -133,12 +133,32 @@ class Settings:
             intelligence_tier="frontier"
         ),
         CandidateModelConfig(
-            id="claude-3-5-sonnet-20240620",
-            name="Claude 3.5 Sonnet",
-            provider="anthropic",
-            input_cost_per_1k=0.0030,
-            output_cost_per_1k=0.0150,
-            description="High-tier reasoning and coding model with exceptional code generation capabilities.",
+            id="gpt-4.5",
+            name="GPT-4.5",
+            provider="openai",
+            input_cost_per_1k=0.0050,
+            output_cost_per_1k=0.0200,
+            description="Next-generation OpenAI frontier model for deep reasoning, mathematical synthesis, and software engineering.",
+            speed_tier="medium",
+            intelligence_tier="frontier"
+        ),
+        CandidateModelConfig(
+            id="gpt-5.4",
+            name="GPT-5.4",
+            provider="openai",
+            input_cost_per_1k=0.0060,
+            output_cost_per_1k=0.0240,
+            description="Advanced OpenAI 5-series model optimized for enterprise system architecture, multi-step planning, and agentic workflows.",
+            speed_tier="medium",
+            intelligence_tier="frontier"
+        ),
+        CandidateModelConfig(
+            id="gpt-5.6",
+            name="GPT-5.6",
+            provider="openai",
+            input_cost_per_1k=0.0075,
+            output_cost_per_1k=0.0300,
+            description="Flagship OpenAI 5-series frontier coding and reasoning model for high-complexity autonomous software engineering.",
             speed_tier="medium",
             intelligence_tier="frontier"
         ),

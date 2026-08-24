@@ -40,3 +40,12 @@ def test_dataset_export():
     response = client.get("/api/dataset/export?target=router")
     assert response.status_code == 200
     assert "application/x-jsonlines" in response.headers["content-type"]
+
+def test_v1_models_endpoint_lists_openai_models():
+    response = client.get("/v1/models")
+    assert response.status_code == 200
+    data = response.json()
+    model_ids = [m["id"] for m in data.get("data", [])]
+    assert "gpt-4.5" in model_ids
+    assert "gpt-5.4" in model_ids
+    assert "gpt-5.6" in model_ids

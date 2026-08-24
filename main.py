@@ -349,11 +349,14 @@ def convert_responses_input_to_messages(raw_request: Dict[str, Any]) -> Tuple[Li
 
     # 4. Inject Tool Usage Directive for Agentic Execution Consistency
     if normalized_tools:
-        tool_names = [
-            t.get("function", {}).get("name", t.get("name", ""))
-            for t in normalized_tools
-            if isinstance(t, dict)
-        ]
+        tool_names = []
+        for t in normalized_tools:
+            if isinstance(t, dict):
+                fn_obj = t.get("function")
+                if isinstance(fn_obj, dict) and fn_obj.get("name"):
+                    tool_names.append(fn_obj.get("name"))
+                elif t.get("name"):
+                    tool_names.append(t.get("name"))
         tool_names_str = ", ".join([tn for tn in tool_names if tn])
         agent_directive = (
             f"\n\nCRITICAL SYSTEM DIRECTIVE FOR TOOL USAGE: You are an autonomous coding assistant inside Codex CLI with direct execution access to tools: [{tool_names_str}]. "

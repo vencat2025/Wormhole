@@ -61,18 +61,20 @@ def extract_tool_calls_from_text(text: str) -> List[Dict[str, Any]]:
                     filename = fn
                     break
 
-        # Fallback intelligent filename inferencing based on code language
+        # Fallback intelligent filename inferencing based on code language or content heuristics
         if not filename:
-            if lang in ["python", "py"]:
+            if lang in ["python", "py"] or "import " in code_content or "def " in code_content:
                 filename = "app.py"
-            elif lang in ["html"]:
+            elif lang in ["html"] or "<!DOCTYPE html>" in code_content or "<html" in code_content or "<body>" in code_content:
                 filename = "index.html"
-            elif lang in ["javascript", "js", "node"]:
+            elif lang in ["javascript", "js", "node"] or "const express" in code_content or "require(" in code_content:
                 filename = "server.js"
-            elif lang in ["bash", "sh", "shell"]:
+            elif lang in ["bash", "sh", "shell"] or "#!/bin/" in code_content or "npm install" in code_content or "pip install" in code_content:
                 filename = "setup.sh"
-            elif lang in ["json"]:
+            elif lang in ["json"] or "{" in code_content:
                 filename = "package.json" if "dependencies" in code_content else "config.json"
+            else:
+                filename = "index.html" if "<" in code_content else "app.py"
 
         if filename:
             existing_files = [json.loads(tc["arguments"]).get("command", "") for tc in tool_calls]
@@ -81,6 +83,22 @@ def extract_tool_calls_from_text(text: str) -> List[Dict[str, Any]]:
                 mkdir_cmd = f"mkdir -p {dir_name} && " if dir_name else ""
                 cmd = f"{mkdir_cmd}cat << 'EOF' > {filename}\n{code_content}\nEOF"
                 tool_calls.append({"name": "exec", "arguments": json.dumps({"command": cmd})})
+
+    # 4. Un-fenced HTML / Code Extraction (when models omit ``` fences)
+    if not tool_calls:
+        # Check for un-fenced HTML document
+        html_match = re.search(r"(<!DOCTYPE html>.*?</html>|<html.*?>.*?</html>)", text, re.DOTALL | re.IGNORECASE)
+        if html_match:
+            html_code = html_match.group(1).strip()
+            cmd = f"cat << 'EOF' > index.html\n{html_code}\nEOF"
+            tool_calls.append({"name": "exec", "arguments": json.dumps({"command": cmd})})
+
+        # Check for un-fenced Node / Express server code
+        node_match = re.search(r"(const express = require.*?;.*?\napp\.listen\(.*?\);)", text, re.DOTALL)
+        if node_match:
+            node_code = node_match.group(1).strip()
+            cmd = f"cat << 'EOF' > server.js\n{node_code}\nEOF"
+            tool_calls.append({"name": "exec", "arguments": json.dumps({"command": cmd})})
 
     return tool_calls
 

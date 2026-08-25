@@ -26,6 +26,11 @@ class Settings:
     JUDGE_MODEL: str = os.getenv("JUDGE_MODEL", "groq/openai/gpt-oss-120b")
     FALLBACK_MODEL: str = os.getenv("FALLBACK_MODEL", "groq/openai/gpt-oss-120b")
 
+    # Model used whenever the client supplies tools. Agentic turns are only
+    # useful if the model reliably emits native function calls, so these are
+    # routed to a known-good caller rather than through cost-based routing.
+    AGENTIC_MODEL: str = os.getenv("AGENTIC_MODEL", "groq/openai/gpt-oss-120b")
+
     # Default API Keys
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")

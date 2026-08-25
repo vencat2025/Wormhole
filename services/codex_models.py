@@ -135,6 +135,21 @@ _CATALOG = [
 ]
 
 
+def _drop_nulls(value: Any) -> Any:
+    """Omit null-valued keys.
+
+    Several ModelInfo fields are non-Option with a serde default, so an
+    explicit null fails to decode where an absent key is accepted. Codex
+    discards the whole catalog on any decode error and falls back to code
+    mode, so this stays strict.
+    """
+    if isinstance(value, dict):
+        return {k: _drop_nulls(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list):
+        return [_drop_nulls(v) for v in value]
+    return value
+
+
 def build_models_response() -> Dict[str, Any]:
-    models: List[Dict[str, Any]] = [_model_entry(*row) for row in _CATALOG]
+    models: List[Dict[str, Any]] = [_drop_nulls(_model_entry(*row)) for row in _CATALOG]
     return {"object": "list", "data": models, "models": models}

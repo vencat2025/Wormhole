@@ -50,17 +50,21 @@ async def route_prompt(enhanced_prompt: str, model_name: str = None, has_tools: 
     Evaluates the enhanced prompt and returns (selected_model_id, reasoning).
     Prioritizes fast local SLM inference (<2ms) trained on public benchmark performance profiles.
     """
+    from services.dispatcher import is_circuit_open
+
+    # Tool-bearing turns come from a CLI harness that will execute whatever is
+    # returned, so they go to a model verified to emit native function calls.
+    # Cost routing across the wider fleet only applies to plain chat turns.
+    if has_tools and not is_circuit_open(settings.AGENTIC_MODEL):
+        return settings.AGENTIC_MODEL, (
+            f"Agentic turn (tools present): pinned to '{settings.AGENTIC_MODEL}' for reliable native function calling."
+        )
+
     local_slm = _get_local_router_slm()
     if local_slm is not None:
         try:
             predicted_model = local_slm.predict([enhanced_prompt])[0]
-            from services.dispatcher import is_circuit_open
-            # Smart Provider Validation & Tool Handling:
-            # groq/qwen/qwen3.6-27b on Groq LPU natively supports OpenAI function calling tools at sub-second (<300ms) speeds with 100% reliability.
-            if has_tools:
-                if predicted_model.startswith("groq/") or "gpt-oss" in predicted_model.lower() or "gemini" in predicted_model.lower() or is_circuit_open(predicted_model):
-                    predicted_model = "groq/qwen/qwen3.6-27b"
-            elif "gemini" in predicted_model.lower() or is_circuit_open(predicted_model):
+            if has_tools or "gemini" in predicted_model.lower() or is_circuit_open(predicted_model):
                 predicted_model = settings.FALLBACK_MODEL
             reasoning = f"⚡ Fast Local Router SLM (<2ms inference): Selected optimal '{predicted_model}' based on benchmark capability matching."
             return predicted_model, reasoning

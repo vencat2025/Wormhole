@@ -251,14 +251,22 @@ def extract_user_prompt(inp: Any) -> str:
     return strip_codex_system_context(res)
 
 def _flatten_codex_tools(tools: List[Any]) -> List[Dict[str, Any]]:
-    """Flatten Codex's nested tool tree into a flat OpenAI function-tool list."""
+    """Flatten Codex's tool tree into a flat OpenAI function-tool list.
+
+    Namespaced tools (the MCP and multi-agent groups) are skipped. They are
+    the overwhelming bulk of the payload -- the Slack group alone is ~17k
+    tokens, enough on its own to blow a small provider's per-minute token
+    limit -- and a namespaced call would have to be routed back through its
+    namespace to be dispatched, which this gateway does not do. Dropping them
+    leaves the coding tools the harness actually needs for a turn.
+    """
     flat = []
     for t in tools:
         if not isinstance(t, dict):
             continue
         t_type = t.get("type")
         if t_type == "namespace":
-            flat.extend(_flatten_codex_tools(t.get("tools") or []))
+            continue
         elif t_type == "custom":
             # Freeform tools take raw text; expose them as a single string arg
             # so open-weight models can still target them.
@@ -438,9 +446,15 @@ async def openai_responses_endpoint(
     # Step 1: Model 2 - Local Router SLM Decision (<2ms)
     selected_model, router_reasoning = await route_prompt(original_prompt, has_tools=bool(tools))
 
-    # Step 2: Selective Prompt Enhancement (Model 1)
+    # Step 2: Selective Prompt Enhancement (Model 1). Agentic turns skip it:
+    # the harness prompt is already precise, the rewritten text is never sent
+    # (raw_messages carries the real conversation), and it costs a round trip
+    # on every step of the tool loop.
     is_frontier = any(f in selected_model.lower() for f in ["gpt-4o", "sonnet", "gemini-1.5-pro"]) and not "mini" in selected_model.lower()
-    if is_frontier:
+    if tools:
+        enhanced_prompt = original_prompt
+        router_reasoning += " | Prompt Enhancement Bypassed (agentic tool turn)"
+    elif is_frontier:
         enhanced_prompt = original_prompt
         router_reasoning += " | Prompt Enhancement Bypassed (Frontier model selected)"
     else:

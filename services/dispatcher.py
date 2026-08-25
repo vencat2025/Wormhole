@@ -1,3 +1,4 @@
+import asyncio
 import time
 import uuid
 import json
@@ -13,6 +14,43 @@ from db.models import InferenceLog
 logger = logging.getLogger("wormhole.dispatcher")
 
 PROVIDER_FAILURE_COUNTS: Dict[str, int] = {}
+
+# Providers report how long to wait when a per-minute token budget is hit.
+_RETRY_AFTER_RE = re.compile(r"try again in ([0-9.]+)\s*s", re.IGNORECASE)
+MAX_RATE_LIMIT_WAIT_SECONDS = 45.0
+
+
+def _retry_after_seconds(err: Exception) -> Optional[float]:
+    match = _RETRY_AFTER_RE.search(str(err))
+    if not match:
+        return None
+    try:
+        return float(match.group(1))
+    except ValueError:
+        return None
+
+
+async def acompletion_with_backoff(attempts: int = 3, **kwargs):
+    """Call the model, waiting out per-minute token limits rather than failing.
+
+    An agent loop issues several requests in quick succession, so a small
+    plan's second or third step routinely lands inside the same rate-limit
+    window as its first. Failing over at that point is useless because the
+    sibling models share the same account quota; waiting the advertised
+    interval is what actually lets the turn complete.
+    """
+    for attempt in range(attempts):
+        try:
+            return await litellm.acompletion(**kwargs)
+        except Exception as err:
+            wait = _retry_after_seconds(err)
+            if wait is None or attempt == attempts - 1 or wait > MAX_RATE_LIMIT_WAIT_SECONDS:
+                raise
+            logger.info(
+                f"Rate limited on '{kwargs.get('model')}'; waiting {wait:.1f}s "
+                f"(attempt {attempt + 1}/{attempts})."
+            )
+            await asyncio.sleep(wait + 1.0)
 
 import os
 
@@ -50,27 +88,6 @@ def prune_messages_for_token_limit(messages: List[Dict[str, Any]], max_tokens: i
         kept.pop(0)
 
     return system_msgs + kept
-
-def adapt_tool_calls_to_schema(tool_calls: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
-    if not tool_calls or not tools:
-        return tool_calls
-
-    declared_fn_name = None
-    for t in tools:
-        if isinstance(t, dict):
-            fn = t.get("function")
-            if isinstance(fn, dict) and fn.get("name"):
-                declared_fn_name = fn.get("name")
-                break
-            elif t.get("name"):
-                declared_fn_name = t.get("name")
-                break
-
-    if declared_fn_name:
-        for tc in tool_calls:
-            tc["name"] = declared_fn_name
-
-    return tool_calls
 
 def extract_tool_calls_from_text(text: str) -> List[Dict[str, Any]]:
     tool_calls = []
@@ -173,6 +190,57 @@ def extract_tool_calls_from_text(text: str) -> List[Dict[str, Any]]:
 
 EXEC_TOOL_PREFERENCE = ("shell", "exec_command", "local_shell", "bash", "container.exec", "exec")
 
+# Tools an agentic coding turn cannot work without. Everything else is
+# optional and only survives if the token budget allows.
+CORE_TOOL_NAMES = frozenset(EXEC_TOOL_PREFERENCE) | {
+    "apply_patch", "write_stdin", "update_plan", "view_image", "request_user_input",
+}
+
+
+def select_tools_for_budget(
+    tools: Optional[List[Dict[str, Any]]],
+    max_tokens: int = 1500,
+    max_description_chars: int = 700,
+) -> Optional[List[Dict[str, Any]]]:
+    """Trim the tool payload to fit a provider's per-request token budget.
+
+    Harnesses advertise every tool the session has, which can run to tens of
+    thousands of tokens regardless of the task. Small providers reject the
+    request outright, and the user sees the agent refuse to do the work.
+    Core execution tools are kept unconditionally; the rest are admitted
+    cheapest-first so the widest selection survives.
+    """
+    if not tools:
+        return tools
+
+    def cost(tool: Dict[str, Any]) -> int:
+        return len(json.dumps(tool)) // 4
+
+    trimmed = []
+    for t in tools:
+        fn = dict(t.get("function") or {})
+        desc = fn.get("description") or ""
+        if len(desc) > max_description_chars:
+            fn["description"] = desc[:max_description_chars].rstrip() + "..."
+        trimmed.append({**t, "function": fn})
+
+    core = [t for t in trimmed if (t.get("function") or {}).get("name") in CORE_TOOL_NAMES]
+    optional = [t for t in trimmed if (t.get("function") or {}).get("name") not in CORE_TOOL_NAMES]
+
+    selected = list(core)
+    budget = max_tokens - sum(cost(t) for t in core)
+    for t in sorted(optional, key=cost):
+        c = cost(t)
+        if c > budget:
+            continue
+        selected.append(t)
+        budget -= c
+
+    if len(selected) != len(tools):
+        dropped = len(tools) - len(selected)
+        logger.info(f"Tool budget: kept {len(selected)} tools, dropped {dropped} to fit {max_tokens} tokens.")
+    return selected or None
+
 
 def adapt_tool_calls_to_schema(
     calls: List[Dict[str, Any]],
@@ -256,6 +324,7 @@ async def dispatch_inference(
     tools: Optional[List[Dict[str, Any]]] = None,
     tool_choice: Optional[Any] = None
 ) -> Dict[str, Any]:
+    tools = select_tools_for_budget(tools)
     request_id = f"wh-{uuid.uuid4().hex[:12]}"
     start_time = time.time()
     
@@ -283,7 +352,7 @@ async def dispatch_inference(
             else:
                 extra_kwargs["tool_choice"] = "auto"
 
-        response = await litellm.acompletion(
+        response = await acompletion_with_backoff(
             model=active_model,
             messages=messages_to_send,
             temperature=0.7,
@@ -309,8 +378,9 @@ async def dispatch_inference(
         
         fallback_candidates = [
             "groq/openai/gpt-oss-120b",
-            "groq/openai/gpt-oss-20b",
-            "groq/qwen/qwen3.6-27b"
+            "groq/qwen/qwen3.6-27b",
+            # Local, so it has no shared account quota to exhaust.
+            "ollama/qwen2.5-coder:7b",
         ]
         
         success = False
@@ -320,7 +390,7 @@ async def dispatch_inference(
             try:
                 logger.info(f"Attempting non-streaming fallback model: {candidate}")
                 fb_kwargs = dict(extra_kwargs)
-                response = await litellm.acompletion(
+                response = await acompletion_with_backoff(
                     model=candidate,
                     messages=messages_to_send,
                     temperature=0.7,
@@ -410,6 +480,7 @@ async def dispatch_streaming_inference(
     tools: Optional[List[Dict[str, Any]]] = None,
     tool_choice: Optional[Any] = None
 ) -> AsyncGenerator[str, None]:
+    tools = select_tools_for_budget(tools)
     request_id = f"wh-{uuid.uuid4().hex[:12]}"
     created_ts = int(time.time())
 
@@ -450,7 +521,7 @@ async def dispatch_streaming_inference(
             else:
                 extra_kwargs["tool_choice"] = "auto"
 
-        response_stream = await litellm.acompletion(
+        response_stream = await acompletion_with_backoff(
             model=selected_model,
             messages=messages_to_send,
             temperature=0.7,
@@ -558,44 +629,60 @@ async def dispatch_streaming_inference(
                 }
                 yield f"data: {json.dumps(tool_chunk)}\n\n"
         else:
-            prompt_lower = original_prompt.lower()
-        if "sort" in prompt_lower and "dictionary" in prompt_lower:
-            full_completion = (
-                "Here is the Python script to sort a list of dictionaries by key:\n\n"
-                "```python\n"
-                "# Sample list of dictionaries\n"
-                "data = [\n"
-                "    {'name': 'Alice', 'age': 30, 'score': 85},\n"
-                "    {'name': 'Bob', 'age': 25, 'score': 92},\n"
-                "    {'name': 'Charlie', 'age': 35, 'score': 78}\n"
-                "]\n\n"
-                "# 1. Sort by a specific key ('age')\n"
-                "sorted_by_age = sorted(data, key=lambda x: x['age'])\n"
-                "print('Sorted by age:', sorted_by_age)\n\n"
-                "# 2. Sort in reverse order by 'score'\n"
-                "sorted_by_score = sorted(data, key=lambda x: x['score'], reverse=True)\n"
-                "print('Sorted by score (descending):', sorted_by_score)\n"
-                "```\n"
-            )
-        else:
-            full_completion = (
-                f"Here is the synthesized response to your request:\n\n"
-                f"```python\n"
-                f"# Utility Script\n"
-                f"print('Execution completed for request: {original_prompt[:60]}')\n"
-                f"```\n"
-            )
-        words = full_completion.split(" ")
-        for idx, word in enumerate(words):
-            delta = word if idx == len(words) - 1 else word + " "
-            out_chunk = {
-                "id": f"chatcmpl-{request_id}",
-                "object": "chat.completion.chunk",
-                "created": created_ts,
-                "model": selected_model,
-                "choices": [{"index": 0, "delta": {"content": delta}, "finish_reason": None}]
-            }
-            yield f"data: {json.dumps(out_chunk)}\n\n"
+            # Retry on a sibling model, then report the real failure. Inventing
+            # a plausible-looking answer here would hand the caller code that
+            # no model actually produced.
+            for candidate in ("groq/openai/gpt-oss-120b", "groq/qwen/qwen3.6-27b", "ollama/qwen2.5-coder:7b"):
+                if candidate == selected_model:
+                    continue
+                try:
+                    logger.info(f"Attempting fallback model: {candidate}")
+                    cand_kwargs = {"tools": tools, "tool_choice": "auto"} if tools else {}
+                    if candidate.startswith("ollama/"):
+                        cand_kwargs["api_base"] = "http://127.0.0.1:11434"
+                    retry = await acompletion_with_backoff(
+                        model=candidate,
+                        messages=messages_to_send,
+                        temperature=0.7,
+                        **cand_kwargs
+                    )
+                    msg = retry.choices[0].message
+                    full_completion = msg.content or ""
+                    native = getattr(msg, "tool_calls", None) or []
+                    for idx, tc in enumerate(native):
+                        tool_chunk = {
+                            "id": f"chatcmpl-{request_id}",
+                            "object": "chat.completion.chunk",
+                            "created": created_ts,
+                            "model": candidate,
+                            "choices": [{
+                                "index": 0,
+                                "delta": {"tool_calls": [{
+                                    "index": idx,
+                                    "id": tc.id,
+                                    "type": "function",
+                                    "function": {"name": tc.function.name, "arguments": tc.function.arguments}
+                                }]},
+                                "finish_reason": "tool_calls" if idx == len(native) - 1 else None
+                            }]
+                        }
+                        yield f"data: {json.dumps(tool_chunk)}\n\n"
+                    record_provider_success(candidate)
+                    break
+                except Exception as fb_err:
+                    logger.warning(f"Candidate '{candidate}' failed: {fb_err}")
+            else:
+                full_completion = f"All model providers failed for this request. Last error: {e}"
+
+            if full_completion:
+                out_chunk = {
+                    "id": f"chatcmpl-{request_id}",
+                    "object": "chat.completion.chunk",
+                    "created": created_ts,
+                    "model": selected_model,
+                    "choices": [{"index": 0, "delta": {"content": full_completion}, "finish_reason": None}]
+                }
+                yield f"data: {json.dumps(out_chunk)}\n\n"
 
     final_chunk = {
         "id": f"chatcmpl-{request_id}",
@@ -652,6 +739,7 @@ async def dispatch_responses_streaming_inference(
     Executes Responses API streaming events for OpenAI Codex CLI (v0.142+).
     Yields response.created, response.output_item.added, response.text.delta, response.text.done, and response.completed.
     """
+    tools = select_tools_for_budget(tools)
     request_id = f"wh-{uuid.uuid4().hex[:12]}"
     created_ts = int(time.time())
     resp_id = f"resp-{request_id}"
@@ -727,7 +815,7 @@ async def dispatch_responses_streaming_inference(
             else:
                 extra_kwargs["tool_choice"] = "auto"
 
-        response_stream = await litellm.acompletion(
+        response_stream = await acompletion_with_backoff(
             model=selected_model,
             messages=messages_to_send,
             temperature=0.7,
@@ -919,8 +1007,9 @@ async def dispatch_responses_streaming_inference(
         
         fallback_candidates = [
             "groq/openai/gpt-oss-120b",
-            "groq/openai/gpt-oss-20b",
-            "groq/qwen/qwen3.6-27b"
+            "groq/qwen/qwen3.6-27b",
+            # Local, so it has no shared account quota to exhaust.
+            "ollama/qwen2.5-coder:7b",
         ]
         
         success = False
@@ -943,7 +1032,7 @@ async def dispatch_responses_streaming_inference(
                     else:
                         cand_kwargs["tool_choice"] = "auto"
 
-                fallback_stream = await litellm.acompletion(
+                fallback_stream = await acompletion_with_backoff(
                     model=candidate,
                     messages=cand_messages,
                     temperature=0.7,

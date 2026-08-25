@@ -45,29 +45,57 @@ def _format_candidate_models() -> str:
         )
     return "\n".join(lines)
 
+def is_model_routable_lazy(model_id: str, need_tools: bool) -> bool:
+    from services.dispatcher import is_model_routable
+    return is_model_routable(model_id, need_tools=need_tools)
+
+
+def _first_routable(model_ids, need_tools: bool) -> str:
+    """First model in preference order that traffic can actually reach."""
+    from services.dispatcher import is_model_routable
+    for model_id in model_ids:
+        if is_model_routable(model_id, need_tools=need_tools):
+            return model_id
+    for m in sorted(settings.CANDIDATE_MODELS, key=lambda c: c.input_cost_per_1k):
+        if is_model_routable(m.id, need_tools=need_tools):
+            return m.id
+    return ""
+
+
 async def route_prompt(enhanced_prompt: str, model_name: str = None, has_tools: bool = False) -> Tuple[str, str]:
     """
     Evaluates the enhanced prompt and returns (selected_model_id, reasoning).
     Prioritizes fast local SLM inference (<2ms) trained on public benchmark performance profiles.
     """
-    from services.dispatcher import is_circuit_open
-
-    # Tool-bearing turns come from a CLI harness that will execute whatever is
-    # returned, so they go to a model verified to emit native function calls.
-    # Cost routing across the wider fleet only applies to plain chat turns.
-    if has_tools and not is_circuit_open(settings.AGENTIC_MODEL):
-        return settings.AGENTIC_MODEL, (
-            f"Agentic turn (tools present): pinned to '{settings.AGENTIC_MODEL}' for reliable native function calling."
-        )
+    from services.dispatcher import is_model_routable
 
     local_slm = _get_local_router_slm()
     if local_slm is not None:
         try:
             predicted_model = local_slm.predict([enhanced_prompt])[0]
-            if has_tools or "gemini" in predicted_model.lower() or is_circuit_open(predicted_model):
-                predicted_model = settings.FALLBACK_MODEL
-            reasoning = f"⚡ Fast Local Router SLM (<2ms inference): Selected optimal '{predicted_model}' based on benchmark capability matching."
-            return predicted_model, reasoning
+
+            # The classifier's pick stands unless it cannot actually be
+            # reached: no credentials, a rejected key, no tool support on an
+            # agentic turn, or an open circuit. Substituting only in those
+            # cases keeps routing meaningful, where an unconditional override
+            # would retire the classifier entirely.
+            if is_model_routable(predicted_model, need_tools=has_tools):
+                return predicted_model, (
+                    f"⚡ Local Router SLM (<2ms): selected '{predicted_model}' on benchmark capability matching."
+                )
+
+            substitute = _first_routable(
+                [settings.AGENTIC_MODEL, settings.FALLBACK_MODEL] if has_tools else [settings.FALLBACK_MODEL],
+                has_tools
+            )
+            if substitute:
+                return substitute, (
+                    f"⚡ Local Router SLM (<2ms) selected '{predicted_model}', which is not currently routable "
+                    f"(missing/rejected credentials, no tool support, or open circuit); using '{substitute}'."
+                )
+            logger.warning(
+                f"SLM picked '{predicted_model}' and no configured substitute is routable; falling through to API router."
+            )
         except Exception as slm_err:
             logger.warning(f"Local Router SLM inference failed ({slm_err}), falling back to API/heuristic router.")
 
@@ -91,26 +119,29 @@ async def route_prompt(enhanced_prompt: str, model_name: str = None, has_tools: 
         selected_model = data.get("selected_model", settings.FALLBACK_MODEL)
         reasoning = data.get("reasoning", "Selected optimal model based on prompt complexity.")
         
-        valid_ids = [m.id for m in settings.CANDIDATE_MODELS]
-        if selected_model not in valid_ids:
-            logger.warning(f"Router output invalid model '{selected_model}', defaulting to {settings.FALLBACK_MODEL}")
-            selected_model = settings.FALLBACK_MODEL
-            
+        if not is_model_routable_lazy(selected_model, has_tools):
+            substitute = _first_routable([settings.FALLBACK_MODEL], has_tools)
+            logger.warning(f"Router output '{selected_model}' is not routable; using '{substitute}'.")
+            selected_model = substitute
+
         return selected_model, reasoning
 
     except Exception as e:
         logger.warning(f"Router API call failed or unconfigured ({e}). Utilizing fallback heuristic routing.")
         prompt_len = len(enhanced_prompt)
-        has_complex_keywords = any(w in enhanced_prompt.lower() for w in ["architecture", "refactor whole system", "formal proof", "quantum", "gpt-5", "autonomous"])
-        
+        has_complex_keywords = any(w in enhanced_prompt.lower() for w in ["architecture", "refactor whole system", "formal proof", "quantum", "autonomous"])
+
+        # Preference order by capability; the first reachable one wins, so a
+        # dead provider degrades the choice instead of the request.
         if has_complex_keywords:
-            selected_model = "gpt-5.6"
-            reasoning = "Routed to gpt-5.6 due to detected high-complexity reasoning keywords."
+            preferred = ["gpt-4o", "gemini/gemini-2.5-pro", "groq/openai/gpt-oss-120b"]
+            reasoning = "Heuristic routing: high-complexity reasoning keywords detected."
         elif prompt_len > 3000:
-            selected_model = "gemini/gemini-2.5-flash"
-            reasoning = "Routed to Gemini 2.5 Flash due to long context and ultra-low token cost."
+            preferred = ["gemini/gemini-2.5-flash", "groq/openai/gpt-oss-20b"]
+            reasoning = "Heuristic routing: long context favours a cheap large-context model."
         else:
-            selected_model = "gpt-4o-mini"
-            reasoning = "Routed to GPT-4o Mini as low-cost model suitable for standard task complexity."
-            
-        return selected_model, reasoning
+            preferred = ["groq/openai/gpt-oss-20b", "gpt-4o-mini"]
+            reasoning = "Heuristic routing: standard task complexity, lowest-cost capable model."
+
+        selected_model = _first_routable(preferred, has_tools) or settings.FALLBACK_MODEL
+        return selected_model, f"{reasoning} Selected '{selected_model}'."

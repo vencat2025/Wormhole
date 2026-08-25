@@ -15,6 +15,10 @@ logger = logging.getLogger("wormhole.dispatcher")
 
 PROVIDER_FAILURE_COUNTS: Dict[str, int] = {}
 
+# Providers whose credentials were rejected this run. Populated from real
+# auth failures rather than assumed, since a key can be present but invalid.
+UNAUTHENTICATED_PROVIDERS: set = set()
+
 # Providers report how long to wait when a per-minute token budget is hit.
 _RETRY_AFTER_RE = re.compile(r"try again in ([0-9.]+)\s*s", re.IGNORECASE)
 MAX_RATE_LIMIT_WAIT_SECONDS = 45.0
@@ -306,12 +310,71 @@ def calculate_cost(model_id: str, prompt_tokens: int, completion_tokens: int) ->
 
 def record_provider_success(model_id: str):
     PROVIDER_FAILURE_COUNTS[model_id] = 0
+    cfg = settings.model_config_for(model_id)
+    if cfg:
+        UNAUTHENTICATED_PROVIDERS.discard(cfg.provider)
 
-def record_provider_failure(model_id: str):
+def record_provider_failure(model_id: str, error: Optional[Exception] = None):
     PROVIDER_FAILURE_COUNTS[model_id] = PROVIDER_FAILURE_COUNTS.get(model_id, 0) + 1
+
+    # A rejected key or an exhausted balance is a property of the provider,
+    # not of one model, and no number of retries will fix either. Marking the
+    # provider dead takes its whole fleet out of routing on the first failure
+    # instead of burning a separate circuit-breaker cycle on each of its
+    # models -- which, in an agent loop, costs the user several dead turns.
+    if error is not None and (_is_auth_error(error) or _is_provider_exhausted(error)):
+        cfg = settings.model_config_for(model_id)
+        if cfg and cfg.provider not in UNAUTHENTICATED_PROVIDERS:
+            UNAUTHENTICATED_PROVIDERS.add(cfg.provider)
+            reason = "rejected its credentials" if _is_auth_error(error) else "reported an exhausted quota or balance"
+            logger.warning(f"Provider '{cfg.provider}' {reason}; excluding its models from routing.")
+
+def _is_auth_error(error: Exception) -> bool:
+    if isinstance(error, litellm.AuthenticationError):
+        return True
+    text = str(error).lower()
+    return "authenticationerror" in text or "incorrect api key" in text or "no api key" in text
+
+def _is_provider_exhausted(error: Exception) -> bool:
+    """Distinguish a depleted account from an ordinary per-minute rate limit.
+
+    Both arrive as 429s, but a per-minute limit names a retry interval and
+    clears on its own, whereas a depleted balance or exhausted daily quota
+    persists until someone pays or the day rolls over. Only the latter should
+    take the provider out of routing.
+    """
+    if _retry_after_seconds(error) is not None:
+        return False
+    text = str(error).lower()
+    return any(s in text for s in (
+        "resource_exhausted",
+        "credits are depleted",
+        "insufficient_quota",
+        "exceeded your current quota",
+        "billing",
+    ))
 
 def is_circuit_open(model_id: str) -> bool:
     return PROVIDER_FAILURE_COUNTS.get(model_id, 0) >= settings.CIRCUIT_BREAKER_THRESHOLD
+
+def is_model_routable(model_id: str, need_tools: bool = False) -> bool:
+    """Whether traffic can actually be sent to this model right now.
+
+    The router's job is to pick the cheapest capable model; this decides
+    whether that pick is reachable. Without it a sound routing decision can
+    still land on a model with no key, a rejected key, or no tool support,
+    and the failover chain quietly undoes the routing.
+    """
+    cfg = settings.model_config_for(model_id)
+    if cfg is None:
+        return False  # not in the fleet; nothing knows how to price or reach it
+    if not settings.provider_has_credentials(cfg.provider):
+        return False
+    if cfg.provider in UNAUTHENTICATED_PROVIDERS:
+        return False
+    if need_tools and not cfg.supports_tools:
+        return False
+    return not is_circuit_open(model_id)
 
 async def dispatch_inference(
     original_prompt: str,
@@ -373,7 +436,7 @@ async def dispatch_inference(
             completion_tokens = len(completion_text) // 4
             
     except Exception as e:
-        record_provider_failure(active_model)
+        record_provider_failure(active_model, e)
         logger.warning(f"Target model call failed for '{active_model}' ({e}). Attempting failover candidates.")
         
         fallback_candidates = [
@@ -600,6 +663,7 @@ async def dispatch_streaming_inference(
                     }
                     yield f"data: {json.dumps(out_chunk)}\n\n"
     except Exception as e:
+        record_provider_failure(selected_model, e)
         logger.warning(f"Target streaming model call failed for '{selected_model}' ({e}). Checking exception payload for tool calls.")
         extracted_from_err = adapt_tool_calls_to_schema(extract_tool_calls_from_text(str(e)), tools)
         if tools and extracted_from_err:
@@ -1002,7 +1066,7 @@ async def dispatch_responses_streaming_inference(
                 yield f"data: {json.dumps(delta_evt_opt)}\n\n"
 
     except Exception as e:
-        record_provider_failure(selected_model)
+        record_provider_failure(selected_model, e)
         logger.warning(f"Target model call failed for '{selected_model}' ({e}). Attempting failover candidates.")
         
         fallback_candidates = [

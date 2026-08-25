@@ -1,5 +1,5 @@
 import os
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -15,6 +15,20 @@ class CandidateModelConfig(BaseModel):
     max_tokens: int = 4096
     speed_tier: str = "fast" # "fast", "medium", "slow"
     intelligence_tier: str = "high" # "basic", "medium", "high", "frontier"
+    # Whether the model emits native OpenAI-style function calls. A model that
+    # cannot do this is unusable for agentic turns no matter how capable it is.
+    supports_tools: bool = True
+
+
+# Credential each provider needs before any of its models can be reached.
+# Ollama is local and needs none.
+PROVIDER_KEY_ENV = {
+    "openai": "OPENAI_API_KEY",
+    "anthropic": "ANTHROPIC_API_KEY",
+    "google": "GEMINI_API_KEY",
+    "groq": "GROQ_API_KEY",
+    "deepseek": "DEEPSEEK_API_KEY",
+}
 
 class Settings:
     PROJECT_NAME: str = "WormHole AI Cost Reducer"
@@ -140,36 +154,19 @@ class Settings:
             speed_tier="medium",
             intelligence_tier="frontier"
         ),
-        CandidateModelConfig(
-            id="gpt-4.5",
-            name="GPT-4.5",
-            provider="openai",
-            input_cost_per_1k=0.0050,
-            output_cost_per_1k=0.0200,
-            description="Next-generation OpenAI frontier model for deep reasoning, mathematical synthesis, and software engineering.",
-            speed_tier="medium",
-            intelligence_tier="frontier"
-        ),
-        CandidateModelConfig(
-            id="gpt-5.4",
-            name="GPT-5.4",
-            provider="openai",
-            input_cost_per_1k=0.0060,
-            output_cost_per_1k=0.0240,
-            description="Advanced OpenAI 5-series model optimized for enterprise system architecture, multi-step planning, and agentic workflows.",
-            speed_tier="medium",
-            intelligence_tier="frontier"
-        ),
-        CandidateModelConfig(
-            id="gpt-5.6",
-            name="GPT-5.6",
-            provider="openai",
-            input_cost_per_1k=0.0075,
-            output_cost_per_1k=0.0300,
-            description="Flagship OpenAI 5-series frontier coding and reasoning model for high-complexity autonomous software engineering.",
-            speed_tier="medium",
-            intelligence_tier="frontier"
-        ),
     ]
+
+    def provider_has_credentials(self, provider: str) -> bool:
+        env_var = PROVIDER_KEY_ENV.get(provider)
+        if env_var is None:
+            return True  # local or keyless provider
+        return bool(getattr(self, env_var, "") or os.getenv(env_var, ""))
+
+    def model_config_for(self, model_id: str) -> Optional[CandidateModelConfig]:
+        for m in self.CANDIDATE_MODELS:
+            if m.id == model_id:
+                return m
+        return None
+
 
 settings = Settings()

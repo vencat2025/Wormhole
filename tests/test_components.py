@@ -131,4 +131,7 @@ async def test_slm_model_suggestion_and_routing():
     complex_prompt = "Given an array of integers, find all unique quad tuples that sum to target using O(N^3) optimization and formal proof of quantum correctness for autonomous enterprise system architecture."
     model2, reasoning2 = await route_prompt(complex_prompt)
     assert model2 in [m.id for m in settings.CANDIDATE_MODELS]
-    assert any(m in model2 for m in ["gpt-5.6", "gpt-5.4", "gpt-4.5", "gpt-4o", "gpt-oss-120b"])
+    # Assert the capability tier rather than specific ids, so the test states
+    # the actual requirement and survives changes to the fleet.
+    tier = settings.model_config_for(model2).intelligence_tier
+    assert tier in ("high", "frontier"), f"complex prompt routed to {model2} (tier={tier})"

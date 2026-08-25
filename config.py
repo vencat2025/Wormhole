@@ -1,6 +1,9 @@
 import os
 from typing import List, Dict, Any
 from pydantic import BaseModel
+from dotenv import load_dotenv
+
+load_dotenv()
 
 class CandidateModelConfig(BaseModel):
     id: str

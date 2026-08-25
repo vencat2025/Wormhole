@@ -2,7 +2,7 @@ import time
 import uuid
 import json
 import logging
-from typing import Dict, Any, List, AsyncGenerator, Optional
+from typing import Dict, Any, List, AsyncGenerator
 import re
 import litellm
 from sqlmodel import Session
@@ -15,42 +15,6 @@ logger = logging.getLogger("wormhole.dispatcher")
 PROVIDER_FAILURE_COUNTS: Dict[str, int] = {}
 
 import os
-
-def prune_messages_for_token_limit(messages: List[Dict[str, Any]], max_tokens: int = 4500) -> List[Dict[str, Any]]:
-    """
-    Prunes long conversation history to fit within Groq On-Demand TPM limits (8,000 TPM).
-    Preserves system instructions and recent user prompts while discarding older middle messages.
-    """
-    def estimate_tokens(msgs):
-        return sum(len(str(m.get("content", ""))) // 4 for m in msgs if isinstance(m, dict))
-
-    if estimate_tokens(messages) <= max_tokens:
-        return messages
-
-    system_msgs = [m for m in messages if isinstance(m, dict) and m.get("role") == "system"]
-    non_system_msgs = [m for m in messages if isinstance(m, dict) and m.get("role") != "system"]
-
-    if len(non_system_msgs) <= 2:
-        return messages
-
-    recent_msgs = non_system_msgs[-2:]
-    middle_msgs = non_system_msgs[:-2]
-
-    pruned = list(system_msgs)
-    budget = max_tokens - estimate_tokens(system_msgs) - estimate_tokens(recent_msgs)
-    
-    acc = []
-    for m in reversed(middle_msgs):
-        m_tokens = len(str(m.get("content", ""))) // 4
-        if budget - m_tokens >= 0:
-            acc.insert(0, m)
-            budget -= m_tokens
-        else:
-            break
-
-    pruned.extend(acc)
-    pruned.extend(recent_msgs)
-    return pruned
 
 def extract_tool_calls_from_text(text: str) -> List[Dict[str, Any]]:
     tool_calls = []
@@ -364,8 +328,7 @@ async def dispatch_streaming_inference(
                 "YOU MUST IMMEDIATELY CALL THE 'exec' TOOL (or output <exec>cat << 'EOF' > index.html ... </exec>) TO CREATE ALL NECESSARY FILES AND DIRECTORIES IN THE WORKSPACE IMMEDIATELY."
             )
         }
-    if selected_model.startswith("groq/"):
-        messages_to_send = prune_messages_for_token_limit(messages_to_send)
+        messages_to_send.insert(0, agentic_directive)
 
     role_chunk = {
         "id": f"chatcmpl-{request_id}",
@@ -648,9 +611,6 @@ async def dispatch_responses_streaming_inference(
             )
         }
         messages_to_send.insert(0, agentic_directive)
-
-    if selected_model.startswith("groq/"):
-        messages_to_send = prune_messages_for_token_limit(messages_to_send)
 
     full_completion = ""
     active_fn_calls = {}

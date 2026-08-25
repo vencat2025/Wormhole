@@ -1,5 +1,4 @@
 import asyncio
-import os
 import time
 import json
 import uuid
@@ -53,17 +52,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-CAPTURE_PATH = os.getenv("WORMHOLE_CAPTURE_FILE")
-
-if CAPTURE_PATH:
-    @app.middleware("http")
-    async def capture_raw_requests(request, call_next):
-        if request.method == "POST" and request.url.path.startswith("/v1/"):
-            body = await request.body()
-            with open(CAPTURE_PATH, "a") as f:
-                f.write(json.dumps({"path": request.url.path, "body": body.decode("utf-8", "replace")}) + "\n")
-        return await call_next(request)
 
 # --- Models for OpenAI API Spec ---
 class ChatMessage(BaseModel):

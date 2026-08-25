@@ -33,24 +33,44 @@ def prune_messages_for_token_limit(messages: List[Dict[str, Any]], max_tokens: i
     if len(non_system_msgs) <= 2:
         return messages
 
-    recent_msgs = non_system_msgs[-2:]
-    middle_msgs = non_system_msgs[:-2]
-
-    pruned = list(system_msgs)
-    budget = max_tokens - estimate_tokens(system_msgs) - estimate_tokens(recent_msgs)
-    
-    acc = []
-    for m in reversed(middle_msgs):
+    # Always keep the final two turns, then fill backwards while budget allows.
+    kept = non_system_msgs[-2:]
+    budget = max_tokens - estimate_tokens(system_msgs) - estimate_tokens(kept)
+    for m in reversed(non_system_msgs[:-2]):
         m_tokens = len(str(m.get("content", ""))) // 4
-        if budget - m_tokens >= 0:
-            acc.insert(0, m)
-            budget -= m_tokens
-        else:
+        if budget - m_tokens < 0:
             break
+        kept.insert(0, m)
+        budget -= m_tokens
 
-    pruned.extend(acc)
-    pruned.extend(recent_msgs)
-    return pruned
+    # A `tool` message is only valid when the assistant `tool_calls` message it
+    # answers is still present. Cutting mid-pair makes providers reject the
+    # whole request, which surfaces as the agent silently giving up mid-task.
+    while kept and kept[0].get("role") == "tool":
+        kept.pop(0)
+
+    return system_msgs + kept
+
+def adapt_tool_calls_to_schema(tool_calls: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]]) -> List[Dict[str, Any]]:
+    if not tool_calls or not tools:
+        return tool_calls
+
+    declared_fn_name = None
+    for t in tools:
+        if isinstance(t, dict):
+            fn = t.get("function")
+            if isinstance(fn, dict) and fn.get("name"):
+                declared_fn_name = fn.get("name")
+                break
+            elif t.get("name"):
+                declared_fn_name = t.get("name")
+                break
+
+    if declared_fn_name:
+        for tc in tool_calls:
+            tc["name"] = declared_fn_name
+
+    return tool_calls
 
 def extract_tool_calls_from_text(text: str) -> List[Dict[str, Any]]:
     tool_calls = []
@@ -151,6 +171,50 @@ def extract_tool_calls_from_text(text: str) -> List[Dict[str, Any]]:
 
     return tool_calls
 
+EXEC_TOOL_PREFERENCE = ("shell", "exec_command", "local_shell", "bash", "container.exec", "exec")
+
+
+def adapt_tool_calls_to_schema(
+    calls: List[Dict[str, Any]],
+    tools: Optional[List[Dict[str, Any]]]
+) -> List[Dict[str, Any]]:
+    """Retarget text-extracted shell calls onto the harness's real exec tool.
+
+    `extract_tool_calls_from_text` emits a generic `exec(command=<string>)`.
+    The client may instead expose `shell`, and may expect `command` as an argv
+    array. Emitting a name or shape the client did not advertise makes it drop
+    the call, which reads to the user as the model refusing to do the work.
+    """
+    if not tools or not calls:
+        return calls
+
+    by_name = {}
+    for t in tools:
+        fn = t.get("function") if isinstance(t, dict) else None
+        if isinstance(fn, dict) and fn.get("name"):
+            by_name[fn["name"]] = fn
+
+    target = next((n for n in EXEC_TOOL_PREFERENCE if n in by_name), None)
+    if target is None:
+        return []
+
+    params = (by_name[target].get("parameters") or {}).get("properties") or {}
+    wants_argv = (params.get("command") or {}).get("type") == "array"
+    arg_key = "command" if "command" in params else ("input" if "input" in params else "command")
+
+    adapted = []
+    for call in calls:
+        try:
+            command = json.loads(call["arguments"]).get("command", "")
+        except (ValueError, KeyError):
+            continue
+        if not command:
+            continue
+        value = ["bash", "-lc", command] if wants_argv else command
+        adapted.append({"name": target, "arguments": json.dumps({arg_key: value})})
+    return adapted
+
+
 def get_model_config(model_id: str) -> CandidateModelConfig:
     for m in settings.CANDIDATE_MODELS:
         if m.id == model_id:
@@ -212,7 +276,7 @@ async def dispatch_inference(
             extra_kwargs["api_base"] = "http://127.0.0.1:11434"
         if active_model.startswith("groq/"):
             extra_kwargs["reasoning_format"] = "hidden"
-        if tools and not active_model.startswith("groq/"):
+        if tools:
             extra_kwargs["tools"] = tools
             if tool_choice and tool_choice != "none":
                 extra_kwargs["tool_choice"] = tool_choice
@@ -256,9 +320,6 @@ async def dispatch_inference(
             try:
                 logger.info(f"Attempting non-streaming fallback model: {candidate}")
                 fb_kwargs = dict(extra_kwargs)
-                if candidate.startswith("groq/"):
-                    fb_kwargs.pop("tools", None)
-                    fb_kwargs.pop("tool_choice", None)
                 response = await litellm.acompletion(
                     model=candidate,
                     messages=messages_to_send,
@@ -382,7 +443,7 @@ async def dispatch_streaming_inference(
         extra_kwargs = {}
         if selected_model.startswith("ollama/"):
             extra_kwargs["api_base"] = "http://127.0.0.1:11434"
-        if tools and (not selected_model.startswith("groq/") or "qwen" in selected_model.lower()) and not "gpt-oss" in selected_model.lower():
+        if tools:
             extra_kwargs["tools"] = tools
             if tool_choice and tool_choice != "none":
                 extra_kwargs["tool_choice"] = tool_choice
@@ -427,7 +488,7 @@ async def dispatch_streaming_inference(
 
         # If no native tool calls were emitted and tools were requested, extract tool calls from completion text
         if tools and not has_native_tool_calls:
-            extracted = extract_tool_calls_from_text(full_completion)
+            extracted = adapt_tool_calls_to_schema(extract_tool_calls_from_text(full_completion), tools)
             if extracted:
                 logger.info(f"Extracted {len(extracted)} tool calls from completion text stream for Chat Completions API.")
                 for idx, tc in enumerate(extracted):
@@ -469,7 +530,7 @@ async def dispatch_streaming_inference(
                     yield f"data: {json.dumps(out_chunk)}\n\n"
     except Exception as e:
         logger.warning(f"Target streaming model call failed for '{selected_model}' ({e}). Checking exception payload for tool calls.")
-        extracted_from_err = extract_tool_calls_from_text(str(e))
+        extracted_from_err = adapt_tool_calls_to_schema(extract_tool_calls_from_text(str(e)), tools)
         if tools and extracted_from_err:
             logger.info(f"Extracted {len(extracted_from_err)} tool calls from exception payload for Chat Completions API.")
             for idx, tc in enumerate(extracted_from_err):
@@ -654,11 +715,12 @@ async def dispatch_responses_streaming_inference(
 
     full_completion = ""
     active_fn_calls = {}
+    streamed_text = False
     try:
         extra_kwargs = {}
         if selected_model.startswith("ollama/"):
             extra_kwargs["api_base"] = "http://127.0.0.1:11434"
-        if tools and (not selected_model.startswith("groq/") or "qwen" in selected_model.lower()) and not "gpt-oss" in selected_model.lower():
+        if tools:
             extra_kwargs["tools"] = tools
             if tool_choice and tool_choice != "none":
                 extra_kwargs["tool_choice"] = tool_choice
@@ -676,30 +738,31 @@ async def dispatch_responses_streaming_inference(
             if chunk.choices and len(chunk.choices) > 0:
                 delta_obj = chunk.choices[0].delta
                 
-                # A. Text Delta (Buffered for tool extraction)
+                # A. Text delta. Streamed as it arrives and also buffered, so
+                # the text fallback below can still mine it for tool calls if
+                # the model never emitted a native one.
                 delta_content = getattr(delta_obj, "content", "") or ""
                 if delta_content:
                     full_completion += delta_content
-                    # Only stream text deltas to client if tools were NOT provided
-                    if not tools:
-                        delta_evt = {
-                            "type": "response.text.delta",
-                            "response_id": resp_id,
-                            "item_id": item_id,
-                            "output_index": 0,
-                            "content_index": 0,
-                            "delta": delta_content
-                        }
-                        yield f"data: {json.dumps(delta_evt)}\n\n"
-                        delta_evt_opt = {
-                            "type": "response.output_text.delta",
-                            "response_id": resp_id,
-                            "item_id": item_id,
-                            "output_index": 0,
-                            "content_index": 0,
-                            "delta": delta_content
-                        }
-                        yield f"data: {json.dumps(delta_evt_opt)}\n\n"
+                    streamed_text = True
+                    delta_evt = {
+                        "type": "response.text.delta",
+                        "response_id": resp_id,
+                        "item_id": item_id,
+                        "output_index": 0,
+                        "content_index": 0,
+                        "delta": delta_content
+                    }
+                    yield f"data: {json.dumps(delta_evt)}\n\n"
+                    delta_evt_opt = {
+                        "type": "response.output_text.delta",
+                        "response_id": resp_id,
+                        "item_id": item_id,
+                        "output_index": 0,
+                        "content_index": 0,
+                        "delta": delta_content
+                    }
+                    yield f"data: {json.dumps(delta_evt_opt)}\n\n"
 
                 # B. Function Call / Tool Call Delta
                 tool_calls = getattr(delta_obj, "tool_calls", None)
@@ -774,7 +837,7 @@ async def dispatch_responses_streaming_inference(
 
         # Dynamic conversion of text tool tags (<exec> ... </exec>) into native Responses API function_call events
         if not active_fn_calls:
-            extracted = extract_tool_calls_from_text(full_completion)
+            extracted = adapt_tool_calls_to_schema(extract_tool_calls_from_text(full_completion), tools)
             if extracted:
                 logger.info(f"Extracted {len(extracted)} tool calls from text stream for Codex CLI execution.")
                 for idx, tc in enumerate(extracted):
@@ -829,29 +892,26 @@ async def dispatch_responses_streaming_inference(
                         }
                     }
                     yield f"data: {json.dumps(event_fn_item_done)}\n\n"
-            else:
-                # No tool calls found in text output; stream the buffered text deltas to Codex CLI
-                words = full_completion.split(" ")
-                for idx, word in enumerate(words):
-                    delta = word if idx == len(words) - 1 else word + " "
-                    delta_evt = {
-                        "type": "response.text.delta",
-                        "response_id": resp_id,
-                        "item_id": item_id,
-                        "output_index": 0,
-                        "content_index": 0,
-                        "delta": delta
-                    }
-                    yield f"data: {json.dumps(delta_evt)}\n\n"
-                    delta_evt_opt = {
-                        "type": "response.output_text.delta",
-                        "response_id": resp_id,
-                        "item_id": item_id,
-                        "output_index": 0,
-                        "content_index": 0,
-                        "delta": delta
-                    }
-                    yield f"data: {json.dumps(delta_evt_opt)}\n\n"
+            elif not streamed_text and full_completion:
+                # Nothing reached the client yet, so flush the buffer.
+                delta_evt = {
+                    "type": "response.text.delta",
+                    "response_id": resp_id,
+                    "item_id": item_id,
+                    "output_index": 0,
+                    "content_index": 0,
+                    "delta": full_completion
+                }
+                yield f"data: {json.dumps(delta_evt)}\n\n"
+                delta_evt_opt = {
+                    "type": "response.output_text.delta",
+                    "response_id": resp_id,
+                    "item_id": item_id,
+                    "output_index": 0,
+                    "content_index": 0,
+                    "delta": full_completion
+                }
+                yield f"data: {json.dumps(delta_evt_opt)}\n\n"
 
     except Exception as e:
         record_provider_failure(selected_model)
@@ -869,10 +929,14 @@ async def dispatch_responses_streaming_inference(
                 continue
             try:
                 logger.info(f"Attempting fallback model: {candidate}")
+                cand_messages = list(messages_to_send)
+                if candidate.startswith("groq/"):
+                    cand_messages = prune_messages_for_token_limit(cand_messages)
+
                 cand_kwargs = {}
                 if candidate.startswith("ollama/"):
                     cand_kwargs["api_base"] = "http://127.0.0.1:11434"
-                if tools and not candidate.startswith("groq/") and not "gpt-oss" in candidate.lower():
+                if tools and (not candidate.startswith("groq/") or "qwen" in candidate.lower()) and not "gpt-oss" in candidate.lower():
                     cand_kwargs["tools"] = tools
                     if tool_choice and tool_choice != "none":
                         cand_kwargs["tool_choice"] = tool_choice
@@ -881,7 +945,7 @@ async def dispatch_responses_streaming_inference(
 
                 fallback_stream = await litellm.acompletion(
                     model=candidate,
-                    messages=messages_to_send,
+                    messages=cand_messages,
                     temperature=0.7,
                     stream=True,
                     **cand_kwargs
@@ -977,7 +1041,7 @@ async def dispatch_responses_streaming_inference(
 
         # Dynamic conversion of text tool tags (<exec> ... </exec>) into native Responses API function_call events
         if not active_fn_calls:
-            extracted = extract_tool_calls_from_text(full_completion)
+            extracted = adapt_tool_calls_to_schema(extract_tool_calls_from_text(full_completion), tools)
             if extracted:
                 logger.info(f"Extracted {len(extracted)} tool calls from text stream for Codex CLI execution.")
                 for idx, tc in enumerate(extracted):

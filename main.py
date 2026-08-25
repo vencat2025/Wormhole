@@ -26,6 +26,7 @@ from services.dispatcher import (
 from services.judge import evaluate_completion
 from services.dataset import export_dataset_jsonl
 from services.auth import verify_api_key
+from services.codex_models import build_models_response
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -88,14 +89,6 @@ ChatCompletionRequest.model_rebuild()
 def strip_codex_system_context(text: str) -> str:
     if not isinstance(text, str):
         return str(text)
-    if "</environment_context>" in text:
-        return text.split("</environment_context>")[-1].strip()
-    if "</skills_instructions>" in text:
-        return text.split("</skills_instructions>")[-1].strip()
-    if "</apps_instructions>" in text:
-        return text.split("</apps_instructions>")[-1].strip()
-    if "</permissions_instructions>" in text:
-        return text.split("</permissions_instructions>")[-1].strip()
     return text
 
 def extract_clean_text(content_obj: Any) -> str:
@@ -257,9 +250,46 @@ def extract_user_prompt(inp: Any) -> str:
         res = extract_clean_text(inp)
     return strip_codex_system_context(res)
 
+def _flatten_codex_tools(tools: List[Any]) -> List[Dict[str, Any]]:
+    """Flatten Codex's nested tool tree into a flat OpenAI function-tool list."""
+    flat = []
+    for t in tools:
+        if not isinstance(t, dict):
+            continue
+        t_type = t.get("type")
+        if t_type == "namespace":
+            flat.extend(_flatten_codex_tools(t.get("tools") or []))
+        elif t_type == "custom":
+            # Freeform tools take raw text; expose them as a single string arg
+            # so open-weight models can still target them.
+            flat.append({
+                "type": "function",
+                "function": {
+                    "name": t.get("name", ""),
+                    "description": t.get("description", ""),
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"input": {"type": "string"}},
+                        "required": ["input"],
+                    },
+                },
+            })
+        elif t_type == "function":
+            flat.append({
+                "type": "function",
+                "function": {
+                    "name": t.get("name", ""),
+                    "description": t.get("description", ""),
+                    "parameters": t.get("parameters") or {"type": "object", "properties": {}},
+                },
+            })
+    return flat
+
+
 def convert_responses_input_to_messages(raw_request: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Optional[List[Dict[str, Any]]]]:
     messages = []
-    
+    collected_tools: List[Dict[str, Any]] = []
+
     # 1. System instructions
     instructions = raw_request.get("instructions")
     if instructions:
@@ -278,12 +308,17 @@ def convert_responses_input_to_messages(raw_request: Dict[str, Any]) -> Tuple[Li
             elif isinstance(item, dict):
                 item_type = item.get("type", "message")
                 
-                if item_type == "message":
+                if item_type == "additional_tools":
+                    # Codex 0.147 nests its tool definitions inside an input
+                    # item rather than the top-level `tools` array.
+                    collected_tools.extend(_flatten_codex_tools(item.get("tools") or []))
+
+                elif item_type == "message":
                     role = item.get("role", "user")
                     content_raw = item.get("content", "")
                     clean_content = extract_clean_text(content_raw)
                     messages.append({"role": role, "content": clean_content})
-                
+
                 elif item_type == "function_call":
                     call_id = item.get("call_id", item.get("id", f"call_{uuid.uuid4().hex[:8]}"))
                     name = item.get("name", "")
@@ -321,13 +356,17 @@ def convert_responses_input_to_messages(raw_request: Dict[str, Any]) -> Tuple[Li
             if isinstance(m, dict):
                 messages.append({"role": m.get("role", "user"), "content": extract_clean_text(m.get("content", ""))})
 
-    # Sanitize messages for provider compatibility (Groq, OpenAI, Anthropic)
+    # Sanitize messages for provider compatibility (Groq, OpenAI, Anthropic).
+    # Codex sends its agent preamble as role "developer", which no provider
+    # below accepts; it becomes a system message rather than being dropped.
     sanitized_messages = []
     for m in messages:
         role = m.get("role", "user")
+        if role == "developer":
+            role = "system"
         content = m.get("content")
         tool_calls = m.get("tool_calls")
-        
+
         if role in ["user", "system", "tool"]:
             msg_dict = {"role": role, "content": str(content) if content else "..."}
             if "tool_call_id" in m:
@@ -339,51 +378,42 @@ def convert_responses_input_to_messages(raw_request: Dict[str, Any]) -> Tuple[Li
                 msg_dict["tool_calls"] = tool_calls
             sanitized_messages.append(msg_dict)
 
-    # 3. Tools normalization
+    # 3. Tools normalization. Codex may supply them at the top level or, since
+    # 0.147, nested inside an `additional_tools` input item.
     raw_tools = raw_request.get("tools")
-    normalized_tools = None
     if raw_tools and isinstance(raw_tools, list):
-        normalized_tools = []
-        for t in raw_tools:
-            if isinstance(t, dict):
-                if t.get("type") == "function" and "function" in t:
-                    normalized_tools.append(t)
-                elif "name" in t:
-                    normalized_tools.append({
-                        "type": "function",
-                        "function": {
-                            "name": t["name"],
-                            "description": t.get("description", ""),
-                            "parameters": t.get("parameters", {"type": "object", "properties": {}})
-                        }
-                    })
-                else:
-                    normalized_tools.append(t)
+        collected_tools.extend(_flatten_codex_tools(raw_tools))
 
-    # 4. Inject Tool Usage Directive for Agentic Execution Consistency
+    seen_names = set()
+    normalized_tools = []
+    for t in collected_tools:
+        name = (t.get("function") or {}).get("name")
+        if name and name not in seen_names:
+            seen_names.add(name)
+            normalized_tools.append(t)
+    normalized_tools = normalized_tools or None
+
+    # 4. Reinforce tool usage. The model catalog already frames the agent role
+    # via instructions_template; this names the concrete tools of this turn.
     if normalized_tools:
-        tool_names = []
-        for t in normalized_tools:
-            if isinstance(t, dict):
-                fn_obj = t.get("function")
-                if isinstance(fn_obj, dict) and fn_obj.get("name"):
-                    tool_names.append(fn_obj.get("name"))
-                elif t.get("name"):
-                    tool_names.append(t.get("name"))
-        tool_names_str = ", ".join([tn for tn in tool_names if tn])
-        agent_directive = (
-            f"\n\nCRITICAL SYSTEM DIRECTIVE FOR TOOL USAGE: You are an autonomous coding assistant inside Codex CLI with direct execution access to tools: [{tool_names_str}]. "
-            f"When the user asks to create files, make changes, refactor code, run commands, or implement features (e.g. 'Make the changes', 'Create app', 'Fix bug'), "
-            f"DO NOT write prose explanations or text instructions describing what the user should do. You MUST call the appropriate function tool immediately to perform the action."
+        exec_tool = next(
+            (n for n in ("shell", "exec_command", "local_shell", "bash", "container.exec", "exec")
+             if n in seen_names),
+            None
         )
-        has_system = False
-        for m in sanitized_messages:
-            if m.get("role") == "system":
-                m["content"] = str(m.get("content", "")) + agent_directive
-                has_system = True
-                break
-        if not has_system:
-            sanitized_messages.insert(0, {"role": "system", "content": agent_directive.strip()})
+        if exec_tool:
+            agent_directive = (
+                f"\n\nTOOL USE FOR THIS TURN: you have `{exec_tool}` available and it runs in the "
+                f"user's real workspace. Any request to create, edit, run, or fix something must be "
+                f"carried out by calling `{exec_tool}` now. Code shown in a reply is not a file on "
+                f"disk; only the tool call creates one. Available tools: {', '.join(sorted(seen_names))}."
+            )
+            for m in sanitized_messages:
+                if m.get("role") == "system":
+                    m["content"] = str(m.get("content", "")) + agent_directive
+                    break
+            else:
+                sanitized_messages.insert(0, {"role": "system", "content": agent_directive.strip()})
 
     return sanitized_messages, normalized_tools
 
@@ -562,194 +592,7 @@ async def anthropic_messages_endpoint(
 # --- OpenAI-Compatible Models Endpoint ---
 @app.get("/v1/models")
 def list_v1_models():
-    reasoning_presets = [
-        {"effort": "none", "description": "No reasoning"},
-        {"effort": "low", "description": "Low reasoning"},
-        {"effort": "medium", "description": "Medium reasoning"},
-        {"effort": "high", "description": "High reasoning"},
-        {"effort": "xhigh", "description": "Extra High reasoning"}
-    ]
-    models_list = [
-        {
-            "id": "wormhole-auto",
-            "name": "WormHole Auto Router",
-            "slug": "wormhole-auto",
-            "display_name": "WormHole Auto Router",
-            "description": "Sub-2ms SLM Auto Router & Selective Enhancer",
-            "base_instructions": "You are an expert AI software engineer.",
-            "priority": 0,
-            "truncation_policy": {"mode": "tokens", "limit": 4096},
-            "support_verbosity": False,
-            "supported_in_api": True,
-            "visibility": "list",
-            "shell_type": "default",
-            "object": "model",
-            "created": int(time.time()),
-            "owned_by": "wormhole",
-            "supports_parallel_tool_calls": True,
-            "supports_reasoning_summaries": True,
-            "supports_multiline": False,
-            "supports_tools": True,
-            "supports_images": False,
-            "supported_reasoning_levels": reasoning_presets
-        },
-        {
-            "id": "gpt-4.5",
-            "name": "GPT-4.5",
-            "slug": "gpt-4.5",
-            "display_name": "GPT-4.5",
-            "description": "OpenAI GPT-4.5 Frontier Reasoning & Coding Model",
-            "base_instructions": "You are an expert AI software engineer.",
-            "priority": 0,
-            "truncation_policy": {"mode": "tokens", "limit": 4096},
-            "support_verbosity": False,
-            "supported_in_api": True,
-            "visibility": "list",
-            "shell_type": "default",
-            "object": "model",
-            "created": int(time.time()),
-            "owned_by": "wormhole",
-            "supports_parallel_tool_calls": True,
-            "supports_reasoning_summaries": True,
-            "supports_multiline": False,
-            "supports_tools": True,
-            "supports_images": False,
-            "supported_reasoning_levels": reasoning_presets
-        },
-        {
-            "id": "gpt-5.4",
-            "name": "GPT-5.4",
-            "slug": "gpt-5.4",
-            "display_name": "GPT-5.4",
-            "description": "OpenAI GPT-5.4 Enterprise System Architecture Model",
-            "base_instructions": "You are an expert AI software engineer.",
-            "priority": 0,
-            "truncation_policy": {"mode": "tokens", "limit": 4096},
-            "support_verbosity": False,
-            "supported_in_api": True,
-            "visibility": "list",
-            "shell_type": "default",
-            "object": "model",
-            "created": int(time.time()),
-            "owned_by": "wormhole",
-            "supports_parallel_tool_calls": True,
-            "supports_reasoning_summaries": True,
-            "supports_multiline": False,
-            "supports_tools": True,
-            "supports_images": False,
-            "supported_reasoning_levels": reasoning_presets
-        },
-        {
-            "id": "gpt-5.6",
-            "name": "GPT-5.6",
-            "slug": "gpt-5.6",
-            "display_name": "GPT-5.6",
-            "description": "OpenAI GPT-5.6 Flagship Autonomous Coding Model",
-            "base_instructions": "You are an expert AI software engineer.",
-            "priority": 0,
-            "truncation_policy": {"mode": "tokens", "limit": 4096},
-            "support_verbosity": False,
-            "supported_in_api": True,
-            "visibility": "list",
-            "shell_type": "default",
-            "object": "model",
-            "created": int(time.time()),
-            "owned_by": "wormhole",
-            "supports_parallel_tool_calls": True,
-            "supports_reasoning_summaries": True,
-            "supports_multiline": False,
-            "supports_tools": True,
-            "supports_images": False,
-            "supported_reasoning_levels": reasoning_presets
-        },
-        {
-            "id": "gpt-5.5",
-            "name": "GPT-5.5",
-            "slug": "gpt-5.5",
-            "display_name": "GPT-5.5",
-            "description": "OpenAI GPT-5.5 Agentic Coding Model",
-            "base_instructions": "You are an expert AI software engineer.",
-            "priority": 0,
-            "truncation_policy": {"mode": "tokens", "limit": 4096},
-            "support_verbosity": False,
-            "supported_in_api": True,
-            "visibility": "list",
-            "shell_type": "default",
-            "object": "model",
-            "created": int(time.time()),
-            "owned_by": "wormhole",
-            "supports_parallel_tool_calls": True,
-            "supports_reasoning_summaries": True,
-            "supports_multiline": False,
-            "supports_tools": True,
-            "supports_images": False,
-            "supported_reasoning_levels": reasoning_presets
-        },
-        {
-            "id": "gpt-4o",
-            "name": "GPT-4o",
-            "slug": "gpt-4o",
-            "display_name": "GPT-4o",
-            "description": "OpenAI GPT-4o Frontier Model",
-            "base_instructions": "You are an expert AI software engineer.",
-            "priority": 0,
-            "truncation_policy": {"mode": "tokens", "limit": 4096},
-            "support_verbosity": False,
-            "supported_in_api": True,
-            "visibility": "list",
-            "shell_type": "default",
-            "object": "model",
-            "created": int(time.time()),
-            "owned_by": "wormhole",
-            "supports_parallel_tool_calls": True,
-            "supports_reasoning_summaries": False,
-            "supports_tools": True,
-            "supports_images": False,
-            "supported_reasoning_levels": reasoning_presets
-        },
-        {
-            "id": "gpt-4o-mini",
-            "name": "GPT-4o Mini",
-            "slug": "gpt-4o-mini",
-            "display_name": "GPT-4o Mini",
-            "description": "OpenAI GPT-4o-mini Budget Model",
-            "base_instructions": "You are an expert AI software engineer.",
-            "priority": 0,
-            "truncation_policy": {"mode": "tokens", "limit": 4096},
-            "support_verbosity": False,
-            "supported_in_api": True,
-            "visibility": "list",
-            "shell_type": "default",
-            "object": "model",
-            "created": int(time.time()),
-            "owned_by": "wormhole",
-            "supports_reasoning_summaries": False,
-            "supports_tools": True,
-            "supports_images": False,
-            "supported_reasoning_levels": reasoning_presets
-        },
-        {
-            "id": "claude-3-5-sonnet-20240620",
-            "name": "Claude 3.5 Sonnet",
-            "slug": "claude-3-5-sonnet-20240620",
-            "display_name": "Claude 3.5 Sonnet",
-            "description": "Anthropic Claude 3.5 Sonnet",
-            "visibility": "public",
-            "shell_type": "default",
-            "object": "model",
-            "created": int(time.time()),
-            "owned_by": "wormhole",
-            "supports_reasoning_summaries": False,
-            "supports_tools": True,
-            "supports_images": False,
-            "supported_reasoning_levels": reasoning_presets
-        }
-    ]
-    return {
-        "object": "list",
-        "data": models_list,
-        "models": models_list
-    }
+    return build_models_response()
 
 # --- Enterprise Admin & Analytics APIs ---
 @app.get("/api/models")

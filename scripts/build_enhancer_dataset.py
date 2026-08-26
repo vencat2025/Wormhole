@@ -3,6 +3,10 @@ import json
 import random
 from typing import List, Dict, Any
 
+# Resolve paths relative to the repository so the project runs from any
+# checkout location, not only the machine it was written on.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 # Prompts across domains paired with expert quality-enhanced prompt structures
 RAW_PROMPT_TEMPLATES = [
     ("Format a JSON list of top primary colors.", 
@@ -65,8 +69,8 @@ def build_enhancer_dataset(num_samples: int = 1000) -> List[Dict[str, Any]]:
 
 if __name__ == "__main__":
     random.seed(42)
-    os.makedirs("/Users/venkat/Documents/AI/WormHole/data", exist_ok=True)
-    out_path = "/Users/venkat/Documents/AI/WormHole/data/enhancer_dataset.json"
+    os.makedirs(os.path.join(PROJECT_ROOT, "data"), exist_ok=True)
+    out_path = os.path.join(PROJECT_ROOT, "data", "enhancer_dataset.json")
     
     data = build_enhancer_dataset(1200)
     with open(out_path, "w") as f:

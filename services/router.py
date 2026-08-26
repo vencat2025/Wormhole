@@ -8,7 +8,11 @@ from config import settings
 
 logger = logging.getLogger("wormhole.router")
 
-MODEL_FILE_PATH = "/Users/venkat/Documents/AI/WormHole/models/router_slm.joblib"
+# Resolve paths relative to the repository so the project runs from any
+# checkout location, not only the machine it was written on.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+MODEL_FILE_PATH = os.path.join(PROJECT_ROOT, "models", "router_slm.joblib")
 _LOCAL_ROUTER_SLM = None
 
 def _get_local_router_slm():

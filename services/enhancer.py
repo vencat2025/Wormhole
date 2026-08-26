@@ -7,7 +7,11 @@ from models.slm_structures import LocalEnhancerSLM
 
 logger = logging.getLogger("wormhole.enhancer")
 
-MODEL_FILE_PATH = "/Users/venkat/Documents/AI/WormHole/models/enhancer_slm.joblib"
+# Resolve paths relative to the repository so the project runs from any
+# checkout location, not only the machine it was written on.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+MODEL_FILE_PATH = os.path.join(PROJECT_ROOT, "models", "enhancer_slm.joblib")
 _LOCAL_ENHANCER_SLM = None
 
 def _get_local_enhancer_slm():

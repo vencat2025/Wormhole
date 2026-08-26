@@ -14,6 +14,15 @@ async def verify_api_key(api_key_header_val: str = Security(api_key_header)):
     if not settings.ENABLE_AUTH:
         return "unauthenticated-dev-user"
 
+    if not settings.VALID_API_KEYS:
+        # Auth is on but no key was configured. Refusing is the only safe
+        # answer: allowing the request would leave an endpoint the operator
+        # believes is protected wide open.
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="ENABLE_AUTH is set but no WORMHOLE_API_KEYS are configured; refusing all requests."
+        )
+
     if not api_key_header_val:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

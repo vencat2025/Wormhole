@@ -10,7 +10,8 @@ init_db()
 
 @pytest.mark.asyncio
 async def test_codex_file_creation_live_proxy():
-    TEST_DIR = "/Users/venkat/Documents/AI/WormHole/scratch/codex_test_workspace"
+    PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    TEST_DIR = os.path.join(PROJECT_ROOT, "scratch", "codex_test_workspace")
     os.makedirs(TEST_DIR, exist_ok=True)
 
     test_prompts = [

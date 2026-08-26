@@ -6,6 +6,20 @@
 
 ![WormHole Automated Demo Recording](docs/wormhole_demo.gif)
 
+> **Project status and scope.** This is a working single-developer project, not a
+> hardened product. Provider support is real but depends on your own keys: the
+> routing fleet is defined in `config.py`, and any model whose provider has no
+> credentials configured is excluded from routing automatically. Development and
+> testing to date have been against **Groq** and **local Ollama**.
+>
+> **How "cost savings" is calculated.** The savings figure in the dashboard is a
+> *computed counterfactual*, not measured spend. For each request the gateway
+> prices the tokens actually used against the model that served them, then prices
+> the same token counts against a GPT-4o baseline using the static rates in
+> `config.py`, and reports the difference. It does not observe your real invoices,
+> and it does not account for retries, failovers, or per-provider billing rules.
+> Treat it as an estimate of routing benefit under a fixed price table.
+
 It introduces a dual-model intermediate layer between your client application harness and downstream LLM providers:
 1. **Prompt Enhancer (Model 1)**: Quality-enriches and structures the user prompt so smaller, cheaper models achieve frontier-quality output.
 2. **Router Model (Model 2)**: Evaluates the enhanced prompt against registered enterprise models and dynamically routes it to the lowest-cost model capable of handling the task.
@@ -171,6 +185,20 @@ flowchart TD
 | `gpt-4o-mini` | OpenAI | $0.00015 | $0.00060 | Medium | Fast |
 | `gpt-4o` | OpenAI | $0.00250 | $0.01000 | Frontier | Medium |
 
+Rates are those configured in `config.py` and are used for the cost estimate
+described above; verify them against current provider pricing before relying on
+the numbers. The full fleet also includes `ollama/qwen2.5-coder:7b` (local, $0),
+`gemini/gemini-2.5-flash`, `gemini/gemini-2.5-pro` and `claude-3-haiku`.
+
+### A note on the model names Codex sees
+
+`/v1/models` advertises names such as `gpt-5.6`, `gpt-5.5` and `gpt-4.5`. These
+are **compatibility aliases, not upstream models**, and WormHole makes no claim
+that such models exist. Codex CLI selects a default model by a compiled-in name
+and refuses to start if the catalog does not list it, so the gateway accepts
+those names and routes each one through the local router to a real model in the
+fleet. See `services/codex_models.py`.
+
 ---
 
 ## ⚔️ Competitive Analysis & Differentiation
@@ -276,4 +304,28 @@ WormHole/
 │   └── test_components.py # Unit tests for enhancer, router, dispatcher, judge, & exporter
 ├── main.py               # FastAPI application host, proxy, & Web Dashboard UI
 └── requirements.txt      # Python dependencies
+```
+
+---
+
+## 📄 License
+
+Licensed under the Apache License 2.0. See [LICENSE](LICENSE).
+
+## 🔐 Configuration & Secrets
+
+Copy [`.env.example`](.env.example) to `.env` and fill in only the providers you
+intend to use. `.env` is gitignored and must never be committed.
+
+Gateway authentication is off by default for local use. Setting `ENABLE_AUTH=true`
+requires at least one key in `WORMHOLE_API_KEYS` (comma-separated); the gateway
+refuses all requests rather than falling back to a default, so an endpoint you
+believe is protected cannot silently be open.
+
+## 🤝 Contributing
+
+Issues and pull requests are welcome. Please run the test suite before opening a PR:
+
+```bash
+pytest tests/ -q
 ```

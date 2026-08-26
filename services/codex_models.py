@@ -123,6 +123,13 @@ def _model_entry(slug: str, display_name: str, description: str, priority: int) 
 
 # Codex picks a default model by its own compiled-in name when the user has not
 # set one, so the ids it may reach for are all present and all routed the same.
+#
+# These are COMPATIBILITY ALIASES, not upstream models. The gateway does not
+# call OpenAI for any of them and makes no claim that such models exist; each
+# name is a label Codex may ask for, and every one is routed by the local
+# router to whichever model in CANDIDATE_MODELS actually fits the prompt.
+# Removing them would leave Codex unable to start when it defaults to a name
+# the catalog does not list.
 _CATALOG = [
     ("wormhole-auto", "WormHole Auto Router", "Routes each turn to the cheapest capable model.", 10),
     ("gpt-5.6-sol", "GPT-5.6 Sol", "Agentic coding via WormHole routing.", 9),

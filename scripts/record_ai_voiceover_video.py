@@ -4,9 +4,11 @@ import subprocess
 import imageio
 from PIL import Image, ImageDraw
 
-OUTPUT_MP4 = "/Users/venkat/Documents/AI/WormHole/docs/wormhole_ai_demo.mp4"
-TEMP_AUDIO = "/Users/venkat/Documents/AI/WormHole/docs/narration.wav"
-TEMP_VIDEO = "/Users/venkat/Documents/AI/WormHole/docs/temp_video.mp4"
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+OUTPUT_MP4 = os.path.join(PROJECT_ROOT, "docs", "wormhole_ai_demo.mp4")
+TEMP_AUDIO = os.path.join(PROJECT_ROOT, "docs", "narration.wav")
+TEMP_VIDEO = os.path.join(PROJECT_ROOT, "docs", "temp_video.mp4")
 
 WIDTH, HEIGHT = 1000, 600
 BACKGROUND_COLOR = (11, 15, 25)

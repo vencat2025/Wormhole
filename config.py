@@ -52,11 +52,15 @@ class Settings:
     GROQ_API_KEY: str = os.getenv("GROQ_API_KEY", "")
     DEEPSEEK_API_KEY: str = os.getenv("DEEPSEEK_API_KEY", "")
 
-    # Enterprise Security & Auth Settings
+    # Enterprise Security & Auth Settings.
+    # Keys come only from the environment. Shipping a default key in source
+    # would mean every deployment that turns auth on shares one publicly
+    # known credential, which is worse than running with auth off, because
+    # it looks protected.
     ENABLE_AUTH: bool = os.getenv("ENABLE_AUTH", "false").lower() in ("true", "1", "yes")
     VALID_API_KEYS: List[str] = [
-        os.getenv("WORMHOLE_API_KEY", "wh_live_demo123456789"),
-        "wh_live_enterprise_default_key"
+        k.strip() for k in os.getenv("WORMHOLE_API_KEYS", os.getenv("WORMHOLE_API_KEY", "")).split(",")
+        if k.strip()
     ]
 
     # Circuit Breaker & Failover Settings

@@ -8,7 +8,11 @@ from sqlmodel import Session, select
 from db.database import engine
 from db.models import InferenceLog
 
-MODEL_OUTPUT_DIR = "/Users/venkat/Documents/AI/WormHole/models"
+# Resolve paths relative to the repository so the project runs from any
+# checkout location, not only the machine it was written on.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+MODEL_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "models")
 EVALUATOR_MODEL_PATH = os.path.join(MODEL_OUTPUT_DIR, "quality_evaluator_slm.joblib")
 
 class QualityEvaluatorSLM:
@@ -51,7 +55,7 @@ def train_quality_evaluator_slm():
     # Fallback synthetic training pairs if DB has few entries
     if len(db_samples) < 20:
         print("📥 Augmenting DB logs with benchmark feedback samples for training...")
-        with open("/Users/venkat/Documents/AI/WormHole/data/frontier_benchmark_dataset.json", "r") as f:
+        with open(os.path.join(PROJECT_ROOT, "data", "frontier_benchmark_dataset.json"), "r") as f:
             bm_data = json.load(f)
         for item in bm_data:
             db_samples.append({

@@ -3,7 +3,9 @@ import time
 import imageio
 from PIL import Image, ImageDraw, ImageFont
 
-OUTPUT_PATH = "/Users/venkat/Documents/AI/WormHole/docs/wormhole_demo.gif"
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+OUTPUT_PATH = os.path.join(PROJECT_ROOT, "docs", "wormhole_demo.gif")
 
 WIDTH, HEIGHT = 1000, 600
 BACKGROUND_COLOR = (11, 15, 25)  # #0b0f19

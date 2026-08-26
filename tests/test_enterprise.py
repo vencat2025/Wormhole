@@ -17,6 +17,9 @@ def test_bearer_token_authentication(monkeypatch):
     and valid Bearer token returns 200 OK.
     """
     monkeypatch.setattr(settings, "ENABLE_AUTH", True)
+    # Keys now come from the environment, so the test supplies its own
+    # rather than relying on a default shipped in source.
+    monkeypatch.setattr(settings, "VALID_API_KEYS", ["wh_live_demo123456789"])
     
     # 1. Unauthenticated request should fail
     resp_no_auth = client.post("/v1/chat/completions", json={
@@ -33,6 +36,23 @@ def test_bearer_token_authentication(monkeypatch):
     )
     assert resp_valid.status_code == 200
     assert "choices" in resp_valid.json()
+
+def test_auth_enabled_without_keys_refuses(monkeypatch):
+    """
+    With ENABLE_AUTH on but no keys configured, every request must be refused.
+    Falling through to allow would leave an endpoint the operator believes is
+    protected completely open.
+    """
+    monkeypatch.setattr(settings, "ENABLE_AUTH", True)
+    monkeypatch.setattr(settings, "VALID_API_KEYS", [])
+
+    resp = client.post(
+        "/v1/chat/completions",
+        headers={"Authorization": "Bearer anything"},
+        json={"messages": [{"role": "user", "content": "Test"}]}
+    )
+    assert resp.status_code == 500
+    assert "WORMHOLE_API_KEYS" in resp.json()["detail"]
 
 def test_sse_streaming_completions():
     """

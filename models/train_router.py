@@ -7,8 +7,12 @@ from sklearn.pipeline import Pipeline
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, accuracy_score
 
-DATASET_PATH = "/Users/venkat/Documents/AI/WormHole/data/frontier_benchmark_dataset.json"
-MODEL_OUTPUT_DIR = "/Users/venkat/Documents/AI/WormHole/models"
+# Resolve paths relative to the repository so the project runs from any
+# checkout location, not only the machine it was written on.
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+DATASET_PATH = os.path.join(PROJECT_ROOT, "data", "frontier_benchmark_dataset.json")
+MODEL_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "models")
 MODEL_FILE_PATH = os.path.join(MODEL_OUTPUT_DIR, "router_slm.joblib")
 
 def train_router_slm():

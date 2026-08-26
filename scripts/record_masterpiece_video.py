@@ -7,14 +7,16 @@ import imageio
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-OUTPUT_MP4 = "/Users/venkat/Documents/AI/WormHole/docs/wormhole_ai_demo.mp4"
-OUTPUT_GIF = "/Users/venkat/Documents/AI/WormHole/docs/wormhole_demo.gif"
-ARTIFACT_MP4 = "/Users/venkat/.gemini/antigravity/brain/4a6c66de-0adb-4faf-8a9b-dc492052aa2b/wormhole_ai_demo.mp4"
-ARTIFACT_GIF = "/Users/venkat/.gemini/antigravity/brain/4a6c66de-0adb-4faf-8a9b-dc492052aa2b/wormhole_demo.gif"
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-TEMP_AUDIO = "/Users/venkat/Documents/AI/WormHole/docs/human_narration.mp3"
-TEMP_WAV = "/Users/venkat/Documents/AI/WormHole/docs/human_narration.wav"
-TEMP_VIDEO = "/Users/venkat/Documents/AI/WormHole/docs/temp_masterpiece.mp4"
+OUTPUT_MP4 = os.path.join(PROJECT_ROOT, "docs", "wormhole_ai_demo.mp4")
+OUTPUT_GIF = os.path.join(PROJECT_ROOT, "docs", "wormhole_demo.gif")
+ARTIFACT_MP4 = os.path.join(PROJECT_ROOT, "docs", "wormhole_ai_demo.mp4")
+ARTIFACT_GIF = os.path.join(PROJECT_ROOT, "docs", "wormhole_demo.gif")
+
+TEMP_AUDIO = os.path.join(PROJECT_ROOT, "docs", "human_narration.mp3")
+TEMP_WAV = os.path.join(PROJECT_ROOT, "docs", "human_narration.wav")
+TEMP_VIDEO = os.path.join(PROJECT_ROOT, "docs", "temp_masterpiece.mp4")
 
 # 1080p Full HD Resolution
 WIDTH, HEIGHT = 1920, 1080

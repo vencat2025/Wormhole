@@ -1408,7 +1408,8 @@ async def dispatch_anthropic_streaming_inference(
     router_reasoning: str,
     original_messages: List[Dict[str, Any]],
     tools: Optional[List[Dict[str, Any]]] = None,
-    tool_choice: Optional[Any] = None
+    tool_choice: Optional[Any] = None,
+    max_tokens: Optional[int] = None
 ) -> AsyncGenerator[str, None]:
     """Stream an Anthropic Messages response for Claude Code.
 
@@ -1470,6 +1471,8 @@ async def dispatch_anthropic_streaming_inference(
         if tools:
             extra_kwargs["tools"] = tools
             extra_kwargs["tool_choice"] = tool_choice if (tool_choice and tool_choice != "none") else "auto"
+        if max_tokens:
+            extra_kwargs["max_tokens"] = max_tokens
 
         stream = await acompletion_with_backoff(
             model=selected_model,
@@ -1548,6 +1551,8 @@ async def dispatch_anthropic_streaming_inference(
                 if tools:
                     cand_kwargs["tools"] = tools
                     cand_kwargs["tool_choice"] = "auto"
+                if max_tokens:
+                    cand_kwargs["max_tokens"] = max_tokens
                 retry = await acompletion_with_backoff(
                     model=candidate, messages=messages_to_send, temperature=0.7, **cand_kwargs
                 )
@@ -1590,6 +1595,7 @@ async def dispatch_anthropic_streaming_inference(
                     stop_reason = "tool_use"
 
                 record_provider_success(candidate)
+                selected_model = candidate
                 recovered = True
                 break
             except Exception as fb_err:

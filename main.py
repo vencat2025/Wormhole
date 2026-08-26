@@ -199,7 +199,10 @@ async def chat_completions(
         "id": f"chatcmpl-{result['request_id']}",
         "object": "chat.completion",
         "created": int(time.time()),
-        "model": selected_model,
+        # The model that actually served the request, which differs from the
+        # routed choice whenever failover ran. Reporting the routed model
+        # would misattribute both the completion and its cost.
+        "model": result["selected_model"],
         "choices": [
             {
                 "index": 0,
@@ -219,7 +222,7 @@ async def chat_completions(
             "request_id": result["request_id"],
             "enhancer_model": settings.ENHANCER_MODEL,
             "router_model": settings.ROUTER_MODEL,
-            "selected_model": selected_model,
+            "selected_model": result["selected_model"],
             "router_reasoning": router_reasoning,
             "actual_cost_usd": result["metrics"]["actual_cost_usd"],
             "baseline_cost_usd": result["metrics"]["baseline_cost_usd"],
@@ -480,7 +483,8 @@ async def openai_responses_endpoint(
                 router_reasoning=router_reasoning,
                 original_messages=raw_messages,
                 tools=tools,
-                tool_choice=tool_choice
+                tool_choice=tool_choice,
+                max_tokens=max_tokens
             ),
             media_type="text/event-stream",
             headers={
@@ -518,7 +522,7 @@ async def openai_responses_endpoint(
         "created_at": int(time.time()),
         "created": int(time.time()),
         "status": "completed",
-        "model": selected_model,
+        "model": result["selected_model"],
         "output": [
             {
                 "type": "message",
@@ -558,6 +562,9 @@ async def anthropic_messages_endpoint(
     auth_token: str = Depends(verify_api_key)
 ):
     messages, tools, tool_choice = convert_anthropic_messages(raw_request)
+    # Anthropic clients always send max_tokens and expect it honoured;
+    # dropping it leaves the provider default in charge of output length.
+    max_tokens = raw_request.get("max_tokens")
     original_prompt = extract_user_prompt(raw_request.get("messages", []))
 
     selected_model, router_reasoning = await route_prompt(original_prompt, has_tools=bool(tools))
@@ -616,7 +623,7 @@ async def anthropic_messages_endpoint(
 
     return build_anthropic_message(
         message_id=f"msg_{result['request_id']}",
-        model=selected_model,
+        model=result["selected_model"],
         text=result["completion"],
         tool_calls=result.get("tool_calls"),
         input_tokens=result["metrics"]["prompt_tokens"],

@@ -1,0 +1,65 @@
+"""Report what the gateway actually did, from logged requests.
+
+Every number here comes from rows in the inference log: which model served
+each request and how many tokens it used. Nothing is asserted or assumed.
+
+One caveat is stated wherever the output is used: the baseline is a
+counterfactual. WormHole cannot know what a request would have cost had it
+gone elsewhere, so it prices the *same measured token counts* against the
+GPT-4o rates in config.py. That makes the savings figure an estimate of
+routing benefit under a fixed price table, not an observed invoice
+difference. The token counts and model choices are real; the comparison is
+constructed.
+"""
+
+import os
+import sys
+from collections import Counter
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from sqlmodel import Session, select
+from db.database import engine
+from db.models import InferenceLog
+
+
+def main() -> int:
+    with Session(engine) as session:
+        rows = session.exec(select(InferenceLog)).all()
+
+    if not rows:
+        print("No logged requests. Run some traffic through the gateway first.")
+        return 1
+
+    actual = sum(r.actual_cost or 0.0 for r in rows)
+    baseline = sum(r.baseline_cost or 0.0 for r in rows)
+    in_tok = sum(r.prompt_tokens or 0 for r in rows)
+    out_tok = sum(r.completion_tokens or 0 for r in rows)
+    scored = [r.judge_score for r in rows if r.judge_score is not None]
+
+    print(f"Sample size: {len(rows)} logged requests")
+    print(f"Tokens: {in_tok:,} in / {out_tok:,} out")
+    print()
+    print(f"Measured spend on models actually used: ${actual:.4f}")
+    print(f"Same tokens priced at the GPT-4o baseline: ${baseline:.4f}")
+    if baseline > 0:
+        print(f"Difference: ${baseline - actual:.4f} ({(baseline - actual) / baseline * 100:.1f}% lower)")
+    print("  (baseline is a counterfactual computed from config.py rates,")
+    print("   not an observed bill)")
+    print()
+
+    dist = Counter(r.selected_model for r in rows)
+    print("Requests by model actually used:")
+    for model, n in dist.most_common():
+        print(f"   {model:34s} {n:>5}  ({n / len(rows) * 100:.1f}%)")
+
+    if scored:
+        print()
+        print(f"LLM-as-judge score: {sum(scored) / len(scored):.2f}/10 "
+              f"over {len(scored)} scored requests")
+        print("  (a model grading a model, not a benchmark pass rate)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

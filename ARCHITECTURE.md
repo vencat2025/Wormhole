@@ -43,7 +43,7 @@ sequenceDiagram
 
 ### 1. Model 1 (Prompt Enhancer)
 - **Role**: Transforms raw, terse, or poorly structured input prompts into detailed, highly explicit, edge-case-aware instructions.
-- **Why**: Allows low-cost, mid-tier models (such as `gpt-4o-mini`, `gemini-1.5-flash`, `claude-3-haiku`) to execute tasks with the accuracy and depth of high-cost frontier models.
+- **Why**: Allows low-cost, mid-tier models (such as `gpt-4o-mini`, `gemini-2.5-flash`, `claude-3-haiku`) to execute tasks with the accuracy and depth of high-cost frontier models.
 
 ### 2. Model 2 (Router LLM)
 - **Role**: An intermediate decision LLM that takes the enhanced prompt, compares its required reasoning complexity against registered enterprise model specs, and selects the lowest-cost model that can fulfill the request.

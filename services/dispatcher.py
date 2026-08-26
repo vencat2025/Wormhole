@@ -194,10 +194,15 @@ def extract_tool_calls_from_text(text: str) -> List[Dict[str, Any]]:
 
 EXEC_TOOL_PREFERENCE = ("shell", "exec_command", "local_shell", "bash", "container.exec", "exec")
 
-# Tools an agentic coding turn cannot work without. Everything else is
-# optional and only survives if the token budget allows.
+# Tools an agentic coding turn cannot work without, across the harnesses this
+# gateway serves. Trimming by size alone would drop the shell and file tools
+# (they carry the longest schemas) and keep trivia, leaving a coding agent
+# that cannot read or write anything.
 CORE_TOOL_NAMES = frozenset(EXEC_TOOL_PREFERENCE) | {
+    # Codex CLI
     "apply_patch", "write_stdin", "update_plan", "view_image", "request_user_input",
+    # Claude Code
+    "Bash", "Read", "Write", "Edit", "Glob", "Grep", "NotebookEdit", "TodoWrite",
 }
 
 
@@ -376,6 +381,48 @@ def is_model_routable(model_id: str, need_tools: bool = False) -> bool:
         return False
     return not is_circuit_open(model_id)
 
+
+# Practical per-request token ceilings. Groq's on-demand tier counts the whole
+# request against a per-minute budget, so a large prompt is rejected outright
+# rather than queued. Local models have no such ceiling.
+PROVIDER_REQUEST_TOKEN_LIMITS = {"groq": 8000}
+
+
+def estimate_request_tokens(messages: List[Dict[str, Any]], tools: Optional[List[Dict[str, Any]]]) -> int:
+    total = sum(len(str(m.get("content", ""))) // 4 for m in messages if isinstance(m, dict))
+    total += sum(len(json.dumps(m.get("tool_calls"))) // 4 for m in messages
+                 if isinstance(m, dict) and m.get("tool_calls"))
+    if tools:
+        total += len(json.dumps(tools)) // 4
+    return total
+
+
+def model_can_accept(model_id: str, est_tokens: int) -> bool:
+    cfg = settings.model_config_for(model_id)
+    if cfg is None:
+        return True
+    limit = PROVIDER_REQUEST_TOKEN_LIMITS.get(cfg.provider)
+    return limit is None or est_tokens <= limit
+
+
+def pick_model_for_size(model_id: str, est_tokens: int, need_tools: bool = False) -> str:
+    """Swap in a model that can physically accept this request.
+
+    A harness system prompt can exceed a small provider's entire per-minute
+    budget on its own, and no amount of history pruning fixes that. Choosing a
+    model without that ceiling is the difference between the turn running and
+    the turn failing.
+    """
+    if model_can_accept(model_id, est_tokens):
+        return model_id
+    for m in sorted(settings.CANDIDATE_MODELS, key=lambda c: c.input_cost_per_1k):
+        if model_can_accept(m.id, est_tokens) and is_model_routable(m.id, need_tools=need_tools):
+            logger.info(
+                f"Request of ~{est_tokens} tokens exceeds the ceiling for '{model_id}'; using '{m.id}'."
+            )
+            return m.id
+    return model_id
+
 async def dispatch_inference(
     original_prompt: str,
     enhanced_prompt: str,
@@ -401,6 +448,7 @@ async def dispatch_inference(
     prompt_tokens = 0
     completion_tokens = 0
     completion_text = ""
+    native_tool_calls: List[Dict[str, Any]] = []
 
     try:
         extra_kwargs = {}
@@ -426,7 +474,11 @@ async def dispatch_inference(
         
         choice = response.choices[0]
         completion_text = choice.message.content or ""
-        
+        native_tool_calls = [
+            tc.model_dump(exclude_none=True) if hasattr(tc, "model_dump") else dict(tc)
+            for tc in (getattr(choice.message, "tool_calls", None) or [])
+        ]
+
         usage = getattr(response, "usage", None)
         if usage:
             prompt_tokens = getattr(usage, "prompt_tokens", len(enhanced_prompt) // 4)
@@ -461,6 +513,10 @@ async def dispatch_inference(
                 )
                 choice = response.choices[0]
                 completion_text = choice.message.content or ""
+                native_tool_calls = [
+                    tc.model_dump(exclude_none=True) if hasattr(tc, "model_dump") else dict(tc)
+                    for tc in (getattr(choice.message, "tool_calls", None) or [])
+                ]
                 active_model = candidate
                 success = True
                 record_provider_success(candidate)
@@ -520,6 +576,7 @@ async def dispatch_inference(
     return {
         "request_id": request_id,
         "completion": completion_text,
+        "tool_calls": native_tool_calls,
         "selected_model": active_model,
         "prompt_tokens": prompt_tokens,
         "completion_tokens": completion_tokens,
@@ -1340,3 +1397,261 @@ async def dispatch_responses_streaming_inference(
             session.commit()
     except Exception as db_err:
         logger.error(f"Failed to save responses streaming log: {db_err}")
+
+
+async def dispatch_anthropic_streaming_inference(
+    original_prompt: str,
+    enhanced_prompt: str,
+    enhancer_model: str,
+    router_model: str,
+    selected_model: str,
+    router_reasoning: str,
+    original_messages: List[Dict[str, Any]],
+    tools: Optional[List[Dict[str, Any]]] = None,
+    tool_choice: Optional[Any] = None
+) -> AsyncGenerator[str, None]:
+    """Stream an Anthropic Messages response for Claude Code.
+
+    Text and tool calls are separate indexed content blocks in this protocol,
+    so a tool call has to open its own block and stream its arguments as
+    `input_json_delta`. Emitting it as text would make the client display the
+    call instead of executing it.
+    """
+    from services.anthropic_api import sse
+
+    request_id = f"wh-{uuid.uuid4().hex[:12]}"
+    message_id = f"msg_{request_id}"
+
+    messages_to_send = prune_messages_for_token_limit(list(original_messages))
+
+    # Choose the model against the untrimmed request, then trim only if the
+    # chosen model actually has a ceiling. Trimming first would discard tools
+    # to fit a provider we are not going to use.
+    selected_model = pick_model_for_size(
+        selected_model, estimate_request_tokens(messages_to_send, tools), need_tools=bool(tools)
+    )
+    cfg = settings.model_config_for(selected_model)
+    ceiling = PROVIDER_REQUEST_TOKEN_LIMITS.get(cfg.provider) if cfg else None
+    if ceiling is not None:
+        overhead = estimate_request_tokens(messages_to_send, None)
+        tools = select_tools_for_budget(tools, max_tokens=max(800, ceiling - overhead - 500))
+
+    yield sse("message_start", {
+        "type": "message_start",
+        "message": {
+            "id": message_id,
+            "type": "message",
+            "role": "assistant",
+            "model": selected_model,
+            "content": [],
+            "stop_reason": None,
+            "stop_sequence": None,
+            "usage": {"input_tokens": max(1, len(enhanced_prompt) // 4), "output_tokens": 0},
+        },
+    })
+
+    block_index = 0
+    text_block_open = False
+    full_completion = ""
+    active_tools: Dict[int, Dict[str, Any]] = {}
+    stop_reason = "end_turn"
+
+    async def open_text_block():
+        return sse("content_block_start", {
+            "type": "content_block_start",
+            "index": block_index,
+            "content_block": {"type": "text", "text": ""},
+        })
+
+    try:
+        extra_kwargs: Dict[str, Any] = {}
+        if selected_model.startswith("ollama/"):
+            extra_kwargs["api_base"] = "http://127.0.0.1:11434"
+        if tools:
+            extra_kwargs["tools"] = tools
+            extra_kwargs["tool_choice"] = tool_choice if (tool_choice and tool_choice != "none") else "auto"
+
+        stream = await acompletion_with_backoff(
+            model=selected_model,
+            messages=messages_to_send,
+            temperature=0.7,
+            stream=True,
+            **extra_kwargs
+        )
+
+        async for chunk in stream:
+            if not chunk.choices:
+                continue
+            delta = chunk.choices[0].delta
+
+            text = getattr(delta, "content", "") or ""
+            if text:
+                if not text_block_open:
+                    yield await open_text_block()
+                    text_block_open = True
+                full_completion += text
+                yield sse("content_block_delta", {
+                    "type": "content_block_delta",
+                    "index": block_index,
+                    "delta": {"type": "text_delta", "text": text},
+                })
+
+            for tc in (getattr(delta, "tool_calls", None) or []):
+                idx = getattr(tc, "index", 0) or 0
+                if idx not in active_tools:
+                    # Text and tool blocks cannot share an index.
+                    if text_block_open:
+                        yield sse("content_block_stop", {"type": "content_block_stop", "index": block_index})
+                        text_block_open = False
+                        block_index += 1
+                    tool_id = getattr(tc, "id", None) or f"toolu_{uuid.uuid4().hex[:16]}"
+                    name = getattr(tc.function, "name", "") or ""
+                    active_tools[idx] = {"block": block_index, "id": tool_id, "name": name}
+                    yield sse("content_block_start", {
+                        "type": "content_block_start",
+                        "index": block_index,
+                        "content_block": {"type": "tool_use", "id": tool_id, "name": name, "input": {}},
+                    })
+                    stop_reason = "tool_use"
+
+                args = getattr(tc.function, "arguments", "") or ""
+                if args:
+                    yield sse("content_block_delta", {
+                        "type": "content_block_delta",
+                        "index": active_tools[idx]["block"],
+                        "delta": {"type": "input_json_delta", "partial_json": args},
+                    })
+
+        if text_block_open:
+            yield sse("content_block_stop", {"type": "content_block_stop", "index": block_index})
+        for meta in active_tools.values():
+            yield sse("content_block_stop", {"type": "content_block_stop", "index": meta["block"]})
+
+    except Exception as e:
+        record_provider_failure(selected_model, e)
+        logger.warning(f"Anthropic streaming failed for '{selected_model}' ({e}). Attempting failover.")
+
+        est = estimate_request_tokens(messages_to_send, tools)
+        candidates = [c for c in (
+            settings.AGENTIC_MODEL,
+            "groq/qwen/qwen3.6-27b",
+            "ollama/qwen2.5-coder:7b",
+        ) if c != selected_model and model_can_accept(c, est)]
+
+        recovered = False
+        for candidate in candidates:
+            try:
+                logger.info(f"Attempting fallback model: {candidate}")
+                cand_kwargs: Dict[str, Any] = {}
+                if candidate.startswith("ollama/"):
+                    cand_kwargs["api_base"] = "http://127.0.0.1:11434"
+                if tools:
+                    cand_kwargs["tools"] = tools
+                    cand_kwargs["tool_choice"] = "auto"
+                retry = await acompletion_with_backoff(
+                    model=candidate, messages=messages_to_send, temperature=0.7, **cand_kwargs
+                )
+                msg_obj = retry.choices[0].message
+                text = msg_obj.content or ""
+                calls = getattr(msg_obj, "tool_calls", None) or []
+
+                if text:
+                    if not text_block_open:
+                        yield await open_text_block()
+                        text_block_open = True
+                    full_completion += text
+                    yield sse("content_block_delta", {
+                        "type": "content_block_delta",
+                        "index": block_index,
+                        "delta": {"type": "text_delta", "text": text},
+                    })
+                if text_block_open:
+                    yield sse("content_block_stop", {"type": "content_block_stop", "index": block_index})
+                    text_block_open = False
+
+                for call in calls:
+                    block_index += 1
+                    yield sse("content_block_start", {
+                        "type": "content_block_start",
+                        "index": block_index,
+                        "content_block": {
+                            "type": "tool_use",
+                            "id": call.id or f"toolu_{uuid.uuid4().hex[:16]}",
+                            "name": call.function.name,
+                            "input": {},
+                        },
+                    })
+                    yield sse("content_block_delta", {
+                        "type": "content_block_delta",
+                        "index": block_index,
+                        "delta": {"type": "input_json_delta", "partial_json": call.function.arguments or "{}"},
+                    })
+                    yield sse("content_block_stop", {"type": "content_block_stop", "index": block_index})
+                    stop_reason = "tool_use"
+
+                record_provider_success(candidate)
+                recovered = True
+                break
+            except Exception as fb_err:
+                logger.warning(f"Candidate '{candidate}' failed: {fb_err}")
+
+        if not recovered:
+            if not text_block_open and not active_tools:
+                yield await open_text_block()
+                text_block_open = True
+            msg = f"WormHole could not complete this request: {e}"
+            full_completion += msg
+            yield sse("content_block_delta", {
+                "type": "content_block_delta",
+                "index": block_index,
+                "delta": {"type": "text_delta", "text": msg},
+            })
+            yield sse("content_block_stop", {"type": "content_block_stop", "index": block_index})
+
+    yield sse("message_delta", {
+        "type": "message_delta",
+        "delta": {"stop_reason": stop_reason, "stop_sequence": None},
+        "usage": {"output_tokens": max(1, len(full_completion) // 4)},
+    })
+    yield sse("message_stop", {"type": "message_stop"})
+
+    _log_inference(
+        request_id=request_id,
+        original_prompt=original_prompt,
+        enhanced_prompt=enhanced_prompt,
+        enhancer_model=enhancer_model,
+        router_model=router_model,
+        selected_model=selected_model,
+        router_reasoning=router_reasoning + " | Anthropic Messages Streamed",
+        completion=full_completion,
+    )
+
+
+def _log_inference(request_id, original_prompt, enhanced_prompt, enhancer_model,
+                   router_model, selected_model, router_reasoning, completion):
+    prompt_tokens = len(enhanced_prompt) // 4
+    completion_tokens = len(completion) // 4
+    actual_cost = calculate_cost(selected_model, prompt_tokens, completion_tokens)
+    baseline_cost = calculate_cost("gpt-4o", prompt_tokens, completion_tokens)
+    try:
+        with Session(engine) as session:
+            session.add(InferenceLog(
+                request_id=request_id,
+                original_prompt=original_prompt,
+                enhanced_prompt=enhanced_prompt,
+                enhancer_model=enhancer_model,
+                router_model=router_model,
+                selected_model=selected_model,
+                router_reasoning=router_reasoning,
+                actual_cost=actual_cost,
+                baseline_cost=baseline_cost,
+                cost_savings=round(max(0.0, baseline_cost - actual_cost), 6),
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=prompt_tokens + completion_tokens,
+                latency_ms=150.0,
+                completion=completion,
+            ))
+            session.commit()
+    except Exception as db_err:
+        logger.error(f"Failed to save inference log: {db_err}")

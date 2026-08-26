@@ -12,6 +12,18 @@
 > credentials configured is excluded from routing automatically. Development and
 > testing to date have been against **Groq** and **local Ollama**.
 >
+> **Measured result.** Across 521 requests logged during development, the models
+> actually selected cost **$0.13** for 124,563 input / 176,688 output tokens,
+> against **$2.08** for those same measured token counts at GPT-4o rates — a
+> **93.6% reduction**. Reproduce it on your own data with
+> `python scripts/measure_savings.py`. The token counts and model choices are
+> real; the GPT-4o baseline is a counterfactual, and this sample is one
+> developer's traffic, not a claim about any other workload.
+>
+> **Quality is not benchmarked.** The only quality signal collected is an
+> LLM-as-judge score, averaging **6.99/10** over 222 scored requests. That is a
+> model grading a model, not a pass rate on any public benchmark.
+>
 > **How "cost savings" is calculated.** The savings figure in the dashboard is a
 > *computed counterfactual*, not measured spend. For each request the gateway
 > prices the tokens actually used against the model that served them, then prices
@@ -221,7 +233,7 @@ For detailed feature comparison matrices, technological moats, and enterprise TC
 
 WormHole acts as a seamless drop-in replacement proxy for all custom developer coding harnesses and AI tools. For complete step-by-step setup guides, see **[HARNESS_INTEGRATION_GUIDE.md](HARNESS_INTEGRATION_GUIDE.md)**.
 
-- **Claude Code CLI**: `export ANTHROPIC_BASE_URL="http://127.0.0.1:8000/v1"`
+- **Claude Code CLI**: `export ANTHROPIC_BASE_URL="http://127.0.0.1:8000"` (no `/v1` suffix — the client appends `/v1/messages` itself)
 - **Cursor IDE / VS Code**: Set `OpenAI Base URL` to `http://127.0.0.1:8000/v1`
 - **Aider CLI / Continue.dev**: Point API base to `http://127.0.0.1:8000/v1`
 

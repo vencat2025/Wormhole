@@ -21,12 +21,14 @@ from services.router import route_prompt
 from services.dispatcher import (
     dispatch_inference,
     dispatch_streaming_inference,
-    dispatch_responses_streaming_inference
+    dispatch_responses_streaming_inference,
+    dispatch_anthropic_streaming_inference
 )
 from services.judge import evaluate_completion
 from services.dataset import export_dataset_jsonl
 from services.auth import verify_api_key
 from services.codex_models import build_models_response
+from services.anthropic_api import convert_anthropic_messages, build_anthropic_message
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -555,31 +557,54 @@ async def anthropic_messages_endpoint(
     background_tasks: BackgroundTasks,
     auth_token: str = Depends(verify_api_key)
 ):
-    system_prompt = raw_request.get("system", "")
-    msgs = raw_request.get("messages", [])
-    
-    openai_messages = []
-    if system_prompt:
-        openai_messages.append({"role": "system", "content": extract_clean_text(system_prompt)})
-    for m in msgs:
-        openai_messages.append({"role": m.get("role", "user"), "content": m.get("content", "")})
+    messages, tools, tool_choice = convert_anthropic_messages(raw_request)
+    original_prompt = extract_user_prompt(raw_request.get("messages", []))
 
-    original_prompt = extract_user_prompt(msgs)
-    selected_model, router_reasoning = await route_prompt(original_prompt)
+    selected_model, router_reasoning = await route_prompt(original_prompt, has_tools=bool(tools))
 
-    is_frontier = any(f in selected_model.lower() for f in ["gpt-4o", "sonnet", "gemini-1.5-pro"]) and not "mini" in selected_model.lower()
-    enhanced_prompt = original_prompt if is_frontier else await enhance_prompt(original_prompt)
+    # Agentic turns skip enhancement for the same reason as the Responses
+    # path: the rewritten text is never sent, and it costs a round trip on
+    # every step of the tool loop.
+    is_frontier = any(f in selected_model.lower() for f in ["gpt-4o", "sonnet", "gemini-2.5-pro"]) and "mini" not in selected_model.lower()
+    if tools or is_frontier:
+        enhanced_prompt = original_prompt
+    else:
+        enhanced_prompt = await enhance_prompt(original_prompt)
+
+    if not messages:
+        messages = [{"role": "user", "content": enhanced_prompt or "Hello"}]
+
+    if raw_request.get("stream"):
+        return StreamingResponse(
+            dispatch_anthropic_streaming_inference(
+                original_prompt=original_prompt,
+                enhanced_prompt=enhanced_prompt,
+                enhancer_model=settings.ENHANCER_MODEL if not (tools or is_frontier) else "bypassed",
+                router_model=settings.ROUTER_MODEL,
+                selected_model=selected_model,
+                router_reasoning=router_reasoning,
+                original_messages=messages,
+                tools=tools,
+                tool_choice=tool_choice
+            ),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no"
+            }
+        )
 
     result = await dispatch_inference(
         original_prompt=original_prompt,
         enhanced_prompt=enhanced_prompt,
-        enhancer_model=settings.ENHANCER_MODEL if not is_frontier else "bypassed",
+        enhancer_model=settings.ENHANCER_MODEL if not (tools or is_frontier) else "bypassed",
         router_model=settings.ROUTER_MODEL,
         selected_model=selected_model,
         router_reasoning=router_reasoning,
-        original_messages=openai_messages,
-        tools=raw_request.get("tools"),
-        tool_choice=raw_request.get("tool_choice")
+        original_messages=messages,
+        tools=tools,
+        tool_choice=tool_choice
     )
 
     background_tasks.add_task(
@@ -589,19 +614,14 @@ async def anthropic_messages_endpoint(
         completion=result["completion"]
     )
 
-    return {
-        "id": f"msg_{result['request_id']}",
-        "type": "message",
-        "role": "assistant",
-        "content": [{"type": "text", "text": result["completion"]}],
-        "model": selected_model,
-        "stop_reason": "end_turn",
-        "stop_sequence": None,
-        "usage": {
-            "input_tokens": result["metrics"]["prompt_tokens"],
-            "output_tokens": result["metrics"]["completion_tokens"]
-        }
-    }
+    return build_anthropic_message(
+        message_id=f"msg_{result['request_id']}",
+        model=selected_model,
+        text=result["completion"],
+        tool_calls=result.get("tool_calls"),
+        input_tokens=result["metrics"]["prompt_tokens"],
+        output_tokens=result["metrics"]["completion_tokens"],
+    )
 
 # --- OpenAI-Compatible Models Endpoint ---
 @app.get("/v1/models")

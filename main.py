@@ -483,8 +483,7 @@ async def openai_responses_endpoint(
                 router_reasoning=router_reasoning,
                 original_messages=raw_messages,
                 tools=tools,
-                tool_choice=tool_choice,
-                max_tokens=max_tokens
+                tool_choice=tool_choice
             ),
             media_type="text/event-stream",
             headers={
@@ -592,7 +591,8 @@ async def anthropic_messages_endpoint(
                 router_reasoning=router_reasoning,
                 original_messages=messages,
                 tools=tools,
-                tool_choice=tool_choice
+                tool_choice=tool_choice,
+                max_tokens=max_tokens
             ),
             media_type="text/event-stream",
             headers={

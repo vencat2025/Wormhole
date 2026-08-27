@@ -34,11 +34,34 @@ Guidelines:
 5. IMPORTANT: If the prompt requests creating an application, writing code, or generating workspace files, explicitly instruct the model to execute shell commands (<exec>...</exec>) to create all necessary files directly, rather than writing conversational tutorial guides or instructions.
 """
 
-async def enhance_prompt(original_prompt: str, model_name: str = None) -> str:
+
+# The chat-oriented enhancement templates ask for structured prose and
+# "code blocks with clean syntax highlighting". On an agentic turn that is
+# actively harmful: it steers a weak model into printing a tutorial instead of
+# calling the tools, which is the failure this gateway exists to prevent. Tool
+# turns get criteria pointed the other way.
+AGENTIC_ENHANCEMENT = """{original}
+
+Execution requirements:
+- Carry out this task now by calling the available tools. Do not describe the steps.
+- Code shown in a reply is not a file. Only a tool call creates one.
+- Create any parent directories before writing into them.
+- After the tools have run, verify the result, then summarise what now exists in one or two sentences."""
+
+
+def enhance_for_tools(original_prompt: str) -> str:
+    """Deterministic, local enhancement suited to a tool-using turn."""
+    return AGENTIC_ENHANCEMENT.format(original=original_prompt.strip())
+
+
+async def enhance_prompt(original_prompt: str, model_name: str = None, for_tools: bool = False) -> str:
     """
     Enhance the input prompt to improve downstream completion quality.
     Prioritizes fast local SLM inference (<1ms) trained on prompt structuring templates.
     """
+    if for_tools:
+        return enhance_for_tools(original_prompt)
+
     local_slm = _get_local_enhancer_slm()
     if local_slm is not None:
         try:

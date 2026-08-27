@@ -71,6 +71,13 @@ class Settings:
     # ollama/ id stays on this machine.
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 
+    # Capability tiers that get prompt enhancement. The enhancer exists to lift
+    # a weaker model's output toward what a frontier model would have produced,
+    # so it is wasted on the strong tiers and skipped there.
+    ENHANCE_TIERS: List[str] = [
+        t.strip().lower() for t in os.getenv("ENHANCE_TIERS", "basic,medium").split(",") if t.strip()
+    ]
+
     # Which router decides the model.
     #   slm  - local classifier, sub-millisecond, but it is bag-of-words over
     #          synthetic templates and does not generalise to unseen phrasing
@@ -136,9 +143,15 @@ class Settings:
             provider="ollama",
             input_cost_per_1k=0.0,
             output_cost_per_1k=0.0,
-            description="Open-source Qwen 2.5 Coder 7B model running locally on Ollama with 100% free $0 API cost.",
+            description="Open-source Qwen 2.5 Coder 7B running locally on Ollama at zero API cost. Chat only: see supports_tools.",
             speed_tier="fast",
-            intelligence_tier="medium"
+            intelligence_tier="medium",
+            # It emits native tool calls for a short prompt and a single tool,
+            # but degrades to printing JSON as text under a real harness
+            # preamble -- measured with both Codex and Claude Code. Routing an
+            # agentic turn here produces an agent that explains instead of
+            # acting, which is the failure this gateway exists to prevent.
+            supports_tools=False
         ),
         CandidateModelConfig(
             id="gpt-4o-mini",
@@ -239,6 +252,10 @@ class Settings:
             intelligence_tier="frontier"
         ),
     ]
+
+    def should_enhance_for(self, model_id: str) -> bool:
+        cfg = self.model_config_for(model_id)
+        return bool(cfg) and cfg.intelligence_tier.lower() in self.ENHANCE_TIERS
 
     def provider_allowed(self, provider: str) -> bool:
         return not self.ROUTING_PROVIDERS or provider.lower() in self.ROUTING_PROVIDERS

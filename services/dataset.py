@@ -12,7 +12,7 @@ def export_router_dataset(min_score: float = 7.0) -> List[Dict[str, Any]]:
     dataset = []
     with Session(engine) as session:
         statement = select(InferenceLog).where(
-            (InferenceLog.judge_score == None) | (InferenceLog.judge_score >= min_score)
+            (InferenceLog.judge_score != None) & (InferenceLog.judge_score >= min_score)
         )
         logs = session.exec(statement).all()
         for log in logs:
@@ -39,7 +39,7 @@ def export_enhancer_dataset(min_score: float = 7.0) -> List[Dict[str, Any]]:
     dataset = []
     with Session(engine) as session:
         statement = select(InferenceLog).where(
-            (InferenceLog.judge_score == None) | (InferenceLog.judge_score >= min_score)
+            (InferenceLog.judge_score != None) & (InferenceLog.judge_score >= min_score)
         )
         logs = session.exec(statement).all()
         for log in logs:

@@ -5,3 +5,4 @@ wormhole.db
 .pytest_cache/
 *.log
 .env
+data/exhausted_providers.json

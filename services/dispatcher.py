@@ -1,4 +1,5 @@
 import asyncio
+import os
 import time
 import uuid
 import json
@@ -18,6 +19,50 @@ PROVIDER_FAILURE_COUNTS: Dict[str, int] = {}
 # Providers whose credentials were rejected this run. Populated from real
 # auth failures rather than assumed, since a key can be present but invalid.
 UNAUTHENTICATED_PROVIDERS: set = set()
+
+# Strong references to in-flight judging tasks; see schedule_judging.
+_PENDING_JUDGE_TASKS: set = set()
+
+# A depleted balance does not refill in minutes, so rediscovering it on every
+# restart costs the user a failed request each time. The finding is cached,
+# with a TTL so a topped-up account recovers without manual intervention.
+_EXHAUSTED_STATE_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "exhausted_providers.json"
+)
+EXHAUSTED_TTL_SECONDS = 6 * 3600
+
+
+def _load_exhausted_providers() -> None:
+    try:
+        with open(_EXHAUSTED_STATE_PATH) as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return
+    now = time.time()
+    for provider, marked_at in data.items():
+        if now - marked_at < EXHAUSTED_TTL_SECONDS:
+            UNAUTHENTICATED_PROVIDERS.add(provider)
+    if UNAUTHENTICATED_PROVIDERS:
+        logger.info(
+            f"Providers still marked out of credit from a previous run: "
+            f"{', '.join(sorted(UNAUTHENTICATED_PROVIDERS))}. "
+            f"Delete {_EXHAUSTED_STATE_PATH} after topping up to retry sooner."
+        )
+
+
+def _persist_exhausted_provider(provider: str) -> None:
+    try:
+        os.makedirs(os.path.dirname(_EXHAUSTED_STATE_PATH), exist_ok=True)
+        try:
+            with open(_EXHAUSTED_STATE_PATH) as f:
+                data = json.load(f)
+        except (OSError, ValueError):
+            data = {}
+        data[provider] = time.time()
+        with open(_EXHAUSTED_STATE_PATH, "w") as f:
+            json.dump(data, f)
+    except OSError as err:
+        logger.warning(f"Could not persist exhausted provider {provider}: {err}")
 
 # Providers report how long to wait when a per-minute token budget is hit.
 _RETRY_AFTER_RE = re.compile(r"try again in ([0-9.]+)\s*s", re.IGNORECASE)
@@ -56,7 +101,6 @@ async def acompletion_with_backoff(attempts: int = 3, **kwargs):
             )
             await asyncio.sleep(wait + 1.0)
 
-import os
 
 def prune_messages_for_token_limit(messages: List[Dict[str, Any]], max_tokens: int = 4500) -> List[Dict[str, Any]]:
     """
@@ -331,7 +375,11 @@ def record_provider_failure(model_id: str, error: Optional[Exception] = None):
         cfg = settings.model_config_for(model_id)
         if cfg and cfg.provider not in UNAUTHENTICATED_PROVIDERS:
             UNAUTHENTICATED_PROVIDERS.add(cfg.provider)
-            reason = "rejected its credentials" if _is_auth_error(error) else "reported an exhausted quota or balance"
+            if _is_auth_error(error):
+                reason = "rejected its credentials"
+            else:
+                reason = "reported an exhausted quota or balance"
+                _persist_exhausted_provider(cfg.provider)
             logger.warning(f"Provider '{cfg.provider}' {reason}; excluding its models from routing.")
 
 def _is_auth_error(error: Exception) -> bool:
@@ -351,12 +399,16 @@ def _is_provider_exhausted(error: Exception) -> bool:
     if _retry_after_seconds(error) is not None:
         return False
     text = str(error).lower()
+    # These must be specific. "billing" alone matched Groq's ordinary
+    # rate-limit message, which ends with an upgrade link containing
+    # /settings/billing, and so retired a healthy provider on its first
+    # transient limit.
     return any(s in text for s in (
         "resource_exhausted",
         "credits are depleted",
         "insufficient_quota",
         "exceeded your current quota",
-        "billing",
+        "check your plan and billing details",
     ))
 
 def is_circuit_open(model_id: str) -> bool:
@@ -426,6 +478,57 @@ def pick_model_for_size(model_id: str, est_tokens: int, need_tools: bool = False
             )
             return m.id
     return model_id
+
+
+
+def describe_tool_calls(calls: List[Dict[str, Any]]) -> str:
+    """Render emitted tool calls as text the judge can assess.
+
+    An agentic turn usually produces no prose at all, so judging only text
+    means the harness traffic -- the bulk of it -- is never scored and the
+    feedback loop starves. What the model decided to *do* is judgeable on the
+    same terms: whether these calls carry out what was asked.
+    """
+    if not calls:
+        return ""
+    lines = ["The model responded with tool calls rather than prose:"]
+    for call in calls:
+        name = call.get("name") or "tool"
+        args = call.get("arguments") or ""
+        if len(args) > 1200:
+            args = args[:1200] + "...(truncated)"
+        lines.append(f"- {name}({args})")
+    return "\n".join(lines)
+
+
+def schedule_judging(request_id: str, enhanced_prompt: str, completion: str) -> None:
+    """Score a streamed completion once the stream has finished.
+
+    Streaming responses return before any judging could run, so the endpoint
+    cannot attach a background task to them. Without this the judge only ever
+    saw non-streaming traffic -- which excludes every harness request, since
+    Codex and Claude Code both stream. That left the feedback loop with no
+    data from the very clients the gateway exists to serve.
+    """
+    if not completion or not completion.strip():
+        return
+    try:
+        from services.judge import evaluate_completion
+        task = asyncio.create_task(evaluate_completion(
+            request_id=request_id,
+            enhanced_prompt=enhanced_prompt,
+            completion=completion,
+        ))
+        # asyncio holds only a weak reference to a running task, so one that
+        # nothing awaits can be collected mid-flight and simply never run.
+        # Keeping a strong reference until completion is what makes this fire.
+        _PENDING_JUDGE_TASKS.add(task)
+        task.add_done_callback(_PENDING_JUDGE_TASKS.discard)
+        logger.info(f"Scheduled judging for {request_id}.")
+    except RuntimeError as err:
+        # No running loop, e.g. when a generator is driven outside a server.
+        logger.warning(f"Could not schedule judging for {request_id}: {err}")
+
 
 async def dispatch_inference(
     original_prompt: str,
@@ -848,6 +951,8 @@ async def dispatch_streaming_inference(
             session.commit()
     except Exception as db_err:
         logger.error(f"Failed to save streaming log: {db_err}")
+
+    schedule_judging(request_id, enhanced_prompt, full_completion)
 
 async def dispatch_responses_streaming_inference(
     original_prompt: str,
@@ -1402,6 +1507,11 @@ async def dispatch_responses_streaming_inference(
     except Exception as db_err:
         logger.error(f"Failed to save responses streaming log: {db_err}")
 
+    judged_text = full_completion or describe_tool_calls([
+        {"name": fn["name"], "arguments": fn["arguments"]} for fn in active_fn_calls.values()
+    ])
+    schedule_judging(request_id, enhanced_prompt, judged_text)
+
 
 async def dispatch_anthropic_streaming_inference(
     original_prompt: str,
@@ -1635,6 +1745,10 @@ async def dispatch_anthropic_streaming_inference(
         router_reasoning=router_reasoning + " | Anthropic Messages Streamed",
         completion=full_completion,
     )
+    judged_text = full_completion or describe_tool_calls([
+        {"name": meta["name"], "arguments": ""} for meta in active_tools.values()
+    ])
+    schedule_judging(request_id, enhanced_prompt, judged_text)
 
 
 def _log_inference(request_id, original_prompt, enhanced_prompt, enhancer_model,

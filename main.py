@@ -40,6 +40,8 @@ from contextlib import asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     logger.info("WormHole DB Initialized successfully.")
+    from services.dispatcher import _load_exhausted_providers
+    _load_exhausted_providers()
     yield
 
 app = FastAPI(
@@ -118,6 +120,27 @@ def extract_clean_text(content_obj: Any) -> str:
         res = str(content_obj)
     return strip_codex_system_context(res)
 
+
+def apply_enhanced_prompt(messages: List[Dict[str, Any]], enhanced: str) -> List[Dict[str, Any]]:
+    """Substitute the enhanced text into the last user message.
+
+    Enhancing a prompt and then sending the original wastes the work entirely,
+    which is what happened before: `enhanced_prompt` was computed on every
+    request and only ever used when the message list was empty, so no harness
+    request ever benefited from it.
+    """
+    if not enhanced or not messages:
+        return messages
+    out = list(messages)
+    for i in range(len(out) - 1, -1, -1):
+        if out[i].get("role") == "user":
+            replaced = dict(out[i])
+            replaced["content"] = enhanced
+            out[i] = replaced
+            return out
+    return out
+
+
 # --- Core Gateway Endpoint ---
 @app.post("/v1/chat/completions")
 async def chat_completions(
@@ -140,16 +163,15 @@ async def chat_completions(
     selected_model, router_reasoning = await route_prompt(original_prompt, has_tools=bool(request.tools))
 
     # Step 2: Selective Prompt Enhancement (Model 1)
-    is_frontier = any(f in selected_model.lower() for f in ["gpt-4o", "sonnet", "gemini-1.5-pro"]) and not "mini" in selected_model.lower()
-    
-    if is_frontier:
-        enhanced_prompt = original_prompt
-        router_reasoning += " | Prompt Enhancement Bypassed (Frontier model selected)"
-    else:
-        enhanced_prompt = await enhance_prompt(original_prompt)
-        router_reasoning += " | Selective Prompt Enhancement Applied (Quality boost for budget model)"
-
     raw_messages = [m.model_dump(exclude_none=True) for m in request.messages]
+
+    if settings.should_enhance_for(selected_model):
+        enhanced_prompt = await enhance_prompt(original_prompt, for_tools=bool(request.tools))
+        raw_messages = apply_enhanced_prompt(raw_messages, enhanced_prompt)
+        router_reasoning += f" | Prompt enhanced for {selected_model}"
+    else:
+        enhanced_prompt = original_prompt
+        router_reasoning += " | Enhancement skipped (model already in a strong tier)"
 
     # Handle SSE token streaming if stream=True
     if request.stream:
@@ -157,7 +179,7 @@ async def chat_completions(
             dispatch_streaming_inference(
                 original_prompt=original_prompt,
                 enhanced_prompt=enhanced_prompt,
-                enhancer_model=settings.ENHANCER_MODEL if not is_frontier else "bypassed",
+                enhancer_model=settings.ENHANCER_MODEL if settings.should_enhance_for(selected_model) else "bypassed",
                 router_model=settings.ROUTER_MODEL,
                 selected_model=selected_model,
                 router_reasoning=router_reasoning,
@@ -177,7 +199,7 @@ async def chat_completions(
     result = await dispatch_inference(
         original_prompt=original_prompt,
         enhanced_prompt=enhanced_prompt,
-        enhancer_model=settings.ENHANCER_MODEL if not is_frontier else "bypassed",
+        enhancer_model=settings.ENHANCER_MODEL if settings.should_enhance_for(selected_model) else "bypassed",
         router_model=settings.ROUTER_MODEL,
         selected_model=selected_model,
         router_reasoning=router_reasoning,
@@ -451,20 +473,17 @@ async def openai_responses_endpoint(
     # Step 1: Model 2 - Local Router SLM Decision (<2ms)
     selected_model, router_reasoning = await route_prompt(original_prompt, has_tools=bool(tools))
 
-    # Step 2: Selective Prompt Enhancement (Model 1). Agentic turns skip it:
-    # the harness prompt is already precise, the rewritten text is never sent
-    # (raw_messages carries the real conversation), and it costs a round trip
-    # on every step of the tool loop.
-    is_frontier = any(f in selected_model.lower() for f in ["gpt-4o", "sonnet", "gemini-1.5-pro"]) and not "mini" in selected_model.lower()
-    if tools:
-        enhanced_prompt = original_prompt
-        router_reasoning += " | Prompt Enhancement Bypassed (agentic tool turn)"
-    elif is_frontier:
-        enhanced_prompt = original_prompt
-        router_reasoning += " | Prompt Enhancement Bypassed (Frontier model selected)"
+    # Step 2: Selective Prompt Enhancement (Model 1). Applied whenever the
+    # chosen model sits in a tier that benefits from it, including agentic
+    # turns -- lifting a weaker model's output is the whole point, and the
+    # local enhancer costs under a millisecond.
+    if settings.should_enhance_for(selected_model):
+        enhanced_prompt = await enhance_prompt(original_prompt, for_tools=bool(tools))
+        raw_messages = apply_enhanced_prompt(raw_messages, enhanced_prompt)
+        router_reasoning += f" | Prompt enhanced for {selected_model}"
     else:
-        enhanced_prompt = await enhance_prompt(original_prompt)
-        router_reasoning += " | Selective Prompt Enhancement Applied (Quality boost for budget model)"
+        enhanced_prompt = original_prompt
+        router_reasoning += " | Enhancement skipped (model already in a strong tier)"
 
     if not raw_messages:
         raw_messages = [{"role": "user", "content": enhanced_prompt}]
@@ -477,7 +496,7 @@ async def openai_responses_endpoint(
             dispatch_responses_streaming_inference(
                 original_prompt=original_prompt,
                 enhanced_prompt=enhanced_prompt,
-                enhancer_model=settings.ENHANCER_MODEL if not is_frontier else "bypassed",
+                enhancer_model=settings.ENHANCER_MODEL if settings.should_enhance_for(selected_model) else "bypassed",
                 router_model=settings.ROUTER_MODEL,
                 selected_model=selected_model,
                 router_reasoning=router_reasoning,
@@ -497,7 +516,7 @@ async def openai_responses_endpoint(
     result = await dispatch_inference(
         original_prompt=original_prompt,
         enhanced_prompt=enhanced_prompt,
-        enhancer_model=settings.ENHANCER_MODEL if not is_frontier else "bypassed",
+        enhancer_model=settings.ENHANCER_MODEL if settings.should_enhance_for(selected_model) else "bypassed",
         router_model=settings.ROUTER_MODEL,
         selected_model=selected_model,
         router_reasoning=router_reasoning,
@@ -568,14 +587,12 @@ async def anthropic_messages_endpoint(
 
     selected_model, router_reasoning = await route_prompt(original_prompt, has_tools=bool(tools))
 
-    # Agentic turns skip enhancement for the same reason as the Responses
-    # path: the rewritten text is never sent, and it costs a round trip on
-    # every step of the tool loop.
-    is_frontier = any(f in selected_model.lower() for f in ["gpt-4o", "sonnet", "gemini-2.5-pro"]) and "mini" not in selected_model.lower()
-    if tools or is_frontier:
-        enhanced_prompt = original_prompt
+    if settings.should_enhance_for(selected_model):
+        enhanced_prompt = await enhance_prompt(original_prompt, for_tools=bool(tools))
+        messages = apply_enhanced_prompt(messages, enhanced_prompt)
+        router_reasoning += f" | Prompt enhanced for {selected_model}"
     else:
-        enhanced_prompt = await enhance_prompt(original_prompt)
+        enhanced_prompt = original_prompt
 
     if not messages:
         messages = [{"role": "user", "content": enhanced_prompt or "Hello"}]
@@ -585,7 +602,7 @@ async def anthropic_messages_endpoint(
             dispatch_anthropic_streaming_inference(
                 original_prompt=original_prompt,
                 enhanced_prompt=enhanced_prompt,
-                enhancer_model=settings.ENHANCER_MODEL if not (tools or is_frontier) else "bypassed",
+                enhancer_model=settings.ENHANCER_MODEL if settings.should_enhance_for(selected_model) else "bypassed",
                 router_model=settings.ROUTER_MODEL,
                 selected_model=selected_model,
                 router_reasoning=router_reasoning,
@@ -605,7 +622,7 @@ async def anthropic_messages_endpoint(
     result = await dispatch_inference(
         original_prompt=original_prompt,
         enhanced_prompt=enhanced_prompt,
-        enhancer_model=settings.ENHANCER_MODEL if not (tools or is_frontier) else "bypassed",
+        enhancer_model=settings.ENHANCER_MODEL if settings.should_enhance_for(selected_model) else "bypassed",
         router_model=settings.ROUTER_MODEL,
         selected_model=selected_model,
         router_reasoning=router_reasoning,
@@ -763,10 +780,26 @@ def retrain_models_from_feedback():
     from models.train_router import train_router_slm
     from models.train_quality_evaluator import train_quality_evaluator_slm
     
+    from services.feedback import collect_feedback_examples
+
     try:
+        # Report what the retrain actually learned from. Previously this
+        # claimed to train "from latest database completions" while reading
+        # only the static benchmark file, so pressing it changed nothing.
+        examples = collect_feedback_examples()
         train_router_slm()
         train_quality_evaluator_slm()
-        return {"status": "success", "message": "Local Router SLM and Quality Evaluator SLM successfully retrained from latest database completions and judge feedback."}
+        return {
+            "status": "success",
+            "feedback_examples_used": len(examples),
+            "message": (
+                f"Retrained on the benchmark bootstrap plus {len(examples)} judged real prompts. "
+                "Only requests the judge actually scored are used; unscored ones are ignored."
+                if examples else
+                "Retrained on the benchmark bootstrap only: no judged real traffic yet. "
+                "Send traffic through the gateway so the judge can score it, then retrain again."
+            ),
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Retraining failed: {str(e)}")
 

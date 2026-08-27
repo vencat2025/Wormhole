@@ -548,3 +548,54 @@ Two limits worth knowing:
 
 Nothing here reads or reuses Codex's stored credentials; it only chooses a model
 name and passes it to Codex with `-m`.
+
+---
+
+## 🔁 The learning loop
+
+The four stages are meant to feed each other, and the last one is what makes
+the router improve rather than be replaced:
+
+```mermaid
+flowchart LR
+    H["💻 Harness\nCodex / Claude Code"] --> R["🧭 Router SLM\nlocal, sub-ms"]
+    R --> E["✨ Enhancer\nonly for weaker tiers"]
+    E --> M["🚀 Selected model"]
+    M --> H
+    M --> J["⚖️ Judge\nscores the completion"]
+    J --> DB[("📊 Inference log\nprompt + model + score")]
+    DB -->|"retrain"| R
+
+    style R fill:#eef2ff,stroke:#6366f1
+    style DB fill:#ecfdf5,stroke:#10b981
+```
+
+**Routing** uses the local classifier by default (`ROUTER_MODE=auto`). It is
+sub-millisecond and needs no network.
+
+**Enhancement** applies only when the chosen model sits in a tier that benefits
+(`ENHANCE_TIERS`, default `basic,medium`). Tool-carrying turns get different
+enhancement text: the chat templates ask for "code blocks with clean syntax
+highlighting", which on an agentic turn steers a weak model into printing a
+tutorial instead of calling the tools.
+
+**Judging** covers streamed traffic, which is all harness traffic. A turn that
+produces only tool calls is scored on those calls, since an agentic turn
+usually contains no prose and would otherwise never be scored at all.
+
+**Retraining** consumes judged real prompts alongside the benchmark bootstrap:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/router/retrain
+# {"status":"success","feedback_examples_used":71,
+#  "message":"Retrained on the benchmark bootstrap plus 71 judged real prompts..."}
+```
+
+A score at or above 7.0 means the model that ran was adequate, so the prompt is
+labelled with it. Below that, the prompt is relabelled one tier up: the task
+needed more than it got. Unscored rows are ignored rather than assumed good.
+
+This is what fixes the classifier's weak generalisation. The benchmark set is
+synthetic templates, which it matches well and generalises from poorly; real
+prompts with real outcomes are what broaden it. Expect it to improve as traffic
+accumulates, not immediately.

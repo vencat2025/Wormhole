@@ -22,10 +22,35 @@ def train_router_slm():
     with open(DATASET_PATH, "r") as f:
         dataset = json.load(f)
 
-    X = [item["prompt"] for item in dataset]
-    y = [item["selected_model"] for item in dataset]
+    # Close the loop: judged real traffic is what teaches the router to
+    # generalise. The benchmark file only cold-starts it, and retraining on
+    # that alone can never change the model no matter how often it is run.
+    feedback = []
+    try:
+        import sys
+        sys.path.insert(0, PROJECT_ROOT)
+        from services.feedback import collect_feedback_examples
+        feedback = collect_feedback_examples()
+    except Exception as fb_err:
+        print(f"⚠️  Could not load feedback examples ({fb_err}); training on benchmarks only.")
 
-    print(f"📊 Dataset size: {len(X)} prompt samples")
+    # Real prompts are worth more than synthetic templates, so they are
+    # repeated to carry weight against the much larger bootstrap set.
+    FEEDBACK_WEIGHT = 3
+    combined = [{"prompt": d["prompt"], "selected_model": d["selected_model"]} for d in dataset]
+    for ex in feedback:
+        combined.extend([{"prompt": ex["prompt"], "selected_model": ex["selected_model"]}] * FEEDBACK_WEIGHT)
+
+    # A class the split cannot stratify on breaks training outright.
+    from collections import Counter
+    counts = Counter(c["selected_model"] for c in combined)
+    combined = [c for c in combined if counts[c["selected_model"]] >= 2]
+
+    X = [item["prompt"] for item in combined]
+    y = [item["selected_model"] for item in combined]
+
+    print(f"📊 Dataset size: {len(X)} samples "
+          f"({len(dataset)} benchmark + {len(feedback)} judged real prompts x{FEEDBACK_WEIGHT})")
     
     # Train / Test split
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)

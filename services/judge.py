@@ -53,7 +53,9 @@ async def evaluate_completion(
             ],
             response_format={"type": "json_object"},
             temperature=0.0,
-            max_tokens=256
+            # 256 truncated the JSON mid-object, which the provider then
+            # rejected as json_validate_failed, so nothing was ever scored.
+            max_tokens=800
         )
         content = response.choices[0].message.content.strip()
         data = json.loads(content)

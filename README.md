@@ -20,9 +20,14 @@
 > real; the GPT-4o baseline is a counterfactual, and this sample is one
 > developer's traffic, not a claim about any other workload.
 >
-> **Quality is not benchmarked.** The only quality signal collected is an
-> LLM-as-judge score, averaging **6.99/10** over 222 scored requests. That is a
-> model grading a model, not a pass rate on any public benchmark.
+> **Quality is not measured.** There is no benchmark in this repository, and the
+> LLM-as-judge scores collected so far are not trustworthy: the judge stored a
+> hardcoded 8.5 whenever its call failed, and it was pinned to a model the
+> provider had decommissioned, so 152 of 238 stored scores are placeholders
+> rather than evaluations. Excluding them leaves 4.38/10 over 86 rows, and that
+> remainder is not reliable either. Judge failures now store no score at all;
+> a trustworthy figure requires traffic recorded after that fix. Any claim about
+> output quality is currently unsupported.
 >
 > **How "cost savings" is calculated.** The savings figure in the dashboard is a
 > *computed counterfactual*, not measured spend. For each request the gateway

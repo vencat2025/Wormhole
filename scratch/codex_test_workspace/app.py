@@ -1,9 +1,10 @@
-from flask import Flask, render_template_string
+from flask import Flask, render_template
+
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return render_template_string('<img src="static/image.jpg" alt="Image">')
+    return render_template('index.html')
 
 if __name__ == '__main__':
     app.run(debug=True)

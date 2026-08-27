@@ -35,7 +35,13 @@ def main() -> int:
     baseline = sum(r.baseline_cost or 0.0 for r in rows)
     in_tok = sum(r.prompt_tokens or 0 for r in rows)
     out_tok = sum(r.completion_tokens or 0 for r in rows)
-    scored = [r.judge_score for r in rows if r.judge_score is not None]
+    # 8.5 was written as a placeholder whenever the judge call failed, so it
+    # cannot be distinguished from a real 8.5 after the fact. Both counts are
+    # reported rather than silently averaging fabricated values together with
+    # measured ones.
+    all_scores = [r.judge_score for r in rows if r.judge_score is not None]
+    placeholder = [v for v in all_scores if v == 8.5]
+    scored = [v for v in all_scores if v != 8.5]
 
     print(f"Sample size: {len(rows)} logged requests")
     print(f"Tokens: {in_tok:,} in / {out_tok:,} out")
@@ -53,11 +59,16 @@ def main() -> int:
     for model, n in dist.most_common():
         print(f"   {model:34s} {n:>5}  ({n / len(rows) * 100:.1f}%)")
 
-    if scored:
+    if all_scores:
         print()
-        print(f"LLM-as-judge score: {sum(scored) / len(scored):.2f}/10 "
-              f"over {len(scored)} scored requests")
-        print("  (a model grading a model, not a benchmark pass rate)")
+        print(f"Rows carrying a judge score: {len(all_scores)}")
+        print(f"  exactly 8.5, the old failure placeholder: {len(placeholder)}")
+        if scored:
+            print(f"  remaining: {sum(scored) / len(scored):.2f}/10 over {len(scored)} rows")
+        print("  Treat this as unreliable. Historic rows were written by a judge")
+        print("  pinned to a decommissioned model, and failures stored 8.5 rather")
+        print("  than nothing. Judge failures now store no score, so a clean")
+        print("  measurement needs traffic recorded after that fix.")
     return 0
 
 

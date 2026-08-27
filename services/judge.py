@@ -35,8 +35,11 @@ async def evaluate_completion(
     """
     model = judge_model_name or settings.JUDGE_MODEL
     
-    score = 8.5
-    feedback = "Auto-evaluated: Satisfactory completion matching enhanced prompt."
+    # No score until the judge actually returns one. Writing a placeholder
+    # would put a fabricated number in the same column as real evaluations,
+    # where nothing downstream can tell them apart.
+    score = None
+    feedback = ""
     
     try:
         response = await litellm.acompletion(
@@ -54,17 +57,16 @@ async def evaluate_completion(
         )
         content = response.choices[0].message.content.strip()
         data = json.loads(content)
-        score = float(data.get("score", 8.5))
+        raw_score = data.get("score")
+        score = float(raw_score) if raw_score is not None else None
         feedback = data.get("feedback", feedback)
     except Exception as e:
-        logger.warning(f"LLM Judge call failed or unconfigured ({e}). Utilizing default evaluation score.")
-        # Fallback scoring heuristic
-        if len(completion) > 20:
-            score = 8.5
-            feedback = "Fallback heuristic judge score: Completion length adequate."
-        else:
-            score = 5.0
-            feedback = "Fallback heuristic judge score: Short output."
+        logger.warning(
+            f"LLM Judge call failed ({e}). Leaving this request unscored; "
+            f"completion length is not a measure of quality."
+        )
+        score = None
+        feedback = f"Not evaluated: judge call failed ({type(e).__name__})."
 
     # Update database record with judge score & feedback
     try:

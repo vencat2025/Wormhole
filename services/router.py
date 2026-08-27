@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-from typing import Tuple
+from typing import Tuple, List, Dict
 import joblib
 import litellm
 from config import settings
@@ -185,3 +185,70 @@ async def route_prompt(enhanced_prompt: str, model_name: str = None, has_tools: 
 
         selected_model = selected_model or settings.FALLBACK_MODEL
         return selected_model, f"⚠️ Router unavailable ({type(e).__name__}); {why}. Selected '{selected_model}'."
+
+
+LADDER_ROUTER_PROMPT = """You choose which tier of coding model should handle a task.
+
+The tiers below are ordered from lightest to strongest. Reply with the index of
+the lightest tier that can do the job properly.
+
+{ladder}
+
+Routing is a trade-off, not a discount. Sending a hard task to a light tier
+produces a wrong answer that costs far more than the tokens saved; sending a
+trivial one to the strongest tier wastes capacity for no gain.
+
+Use the LIGHTEST tier for: factual questions, renames, formatting, single
+functions, boilerplate, simple edits, and anything a competent junior engineer
+would finish without deliberation.
+
+Escalate for: correctness proofs or complexity bounds; concurrency, races or
+distributed consistency; changes spanning multiple files or services; system,
+schema or migration design; debugging from a symptom rather than a known cause;
+security, money, auth, or anything hard to reverse; long or ambiguous
+requirements needing decomposition.
+
+Judge the task, not its vocabulary.
+
+Respond ONLY with valid JSON:
+{{"index": <integer>, "reasoning": "<one sentence>"}}
+"""
+
+
+async def route_among(prompt: str, ladder: List[Dict[str, str]]) -> Tuple[str, str]:
+    """Pick a rung from an explicitly ordered ladder of models.
+
+    Used when the gateway advises but does not execute -- for a client that
+    calls its provider itself, such as Codex on a ChatGPT subscription. The
+    ladder is supplied by the caller and ordered lightest first, so no pricing
+    table is needed and nothing is assumed about models this gateway cannot
+    reach.
+    """
+    if not ladder:
+        return "", "No candidate models supplied."
+
+    rendered = "\n".join(
+        f"{i}. {m.get('id')} - {m.get('description', 'no description')}"
+        for i, m in enumerate(ladder)
+    )
+    try:
+        response = await litellm.acompletion(
+            model=settings.ROUTER_MODEL,
+            messages=[
+                {"role": "system", "content": LADDER_ROUTER_PROMPT.format(ladder=rendered)},
+                {"role": "user", "content": f"Task:\n{prompt}"},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.1,
+            max_tokens=256,
+        )
+        data = json.loads(response.choices[0].message.content.strip())
+        idx = int(data.get("index", 0))
+        idx = max(0, min(idx, len(ladder) - 1))
+        return ladder[idx]["id"], data.get("reasoning", "")
+    except Exception as e:
+        # Degrade toward capability, matching route_prompt: an advisory router
+        # that fails should not quietly recommend the weakest tier.
+        logger.warning(f"Ladder router failed ({e}); defaulting to a middle rung.")
+        idx = len(ladder) // 2
+        return ladder[idx]["id"], f"Router unavailable ({type(e).__name__}); defaulted to a middle tier."

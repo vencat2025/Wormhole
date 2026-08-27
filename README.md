@@ -426,3 +426,44 @@ answer. Point `ROUTER_MODEL` at a provider with headroom.
 > tier ordering, marked `pricing_verified=False`. Routing depends only on the
 > ordering, but replace them with published rates before trusting any dollar
 > figure.
+
+---
+
+## 💳 Routing without paying for API tokens (`scripts/codex-routed`)
+
+Codex signed in with a ChatGPT account bills against that subscription. Putting
+the gateway in the request path moves the same work onto pay-per-token API
+billing, which is usually the opposite of what you want. The gateway can
+instead **advise and step aside**: it picks the tier, and Codex makes the call
+itself on the entitlement you already pay for.
+
+```bash
+scripts/codex-routed "rename userCnt to userCount" --skip-git-repo-check -C .
+# → routed to gpt-5.6-luna: simple rename, a light tier handles it
+```
+
+`POST /api/route` takes the prompt and an ordered ladder (lightest first) and
+returns a model id. It performs no inference, so it works for models this
+gateway cannot itself reach.
+
+Observed decisions:
+
+| Task | Routed to |
+|---|---|
+| `rename the variable userCnt to userCount` | `gpt-5.6-luna` |
+| `write a unit test for a date parsing helper` | `gpt-5.6-luna` |
+| `design a zero-downtime migration … prove no double-charge is possible` | `gpt-5.5` |
+
+Two limits worth knowing:
+
+- **Per invocation, not per turn.** The model is fixed for the session Codex
+  starts. That suits the usual policy ("don't open every task on the flagship")
+  but it cannot switch tiers mid-conversation.
+- **A ChatGPT account can only use certain models.** Verified on one account:
+  `gpt-5.6-luna`, `gpt-5.6-terra` and `gpt-5.5` are accepted, while `gpt-5-mini`,
+  `gpt-5.4`, `gpt-5.6-sol` and the general API ids are refused with
+  *"not supported when using Codex with a ChatGPT account"*. Probe your own
+  account before fixing the ladder in the script.
+
+Nothing here reads or reuses Codex's stored credentials; it only chooses a model
+name and passes it to Codex with `-m`.

@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Ask WormHole which tier a task needs, then let Codex make the call itself.
+#
+# Codex on a ChatGPT subscription bills against that entitlement. Proxying it
+# through the gateway would move the same work onto pay-per-token API billing,
+# so here the gateway only decides and never touches the traffic.
+#
+# Granularity is per invocation, not per turn: the model is fixed for the
+# session Codex starts.
+#
+# Usage: scripts/codex-routed "your task" [extra codex args...]
+set -euo pipefail
+
+GATEWAY="${WORMHOLE_URL:-http://127.0.0.1:8000}"
+# Ordered lightest first. Only models a ChatGPT account may use belong here;
+# general API model ids are rejected by Codex under subscription auth.
+LADDER='[
+  {"id":"gpt-5.6-luna","description":"lightest agentic tier, routine edits and simple tasks"},
+  {"id":"gpt-5.6-terra","description":"balanced everyday coding, multi-step work"},
+  {"id":"gpt-5.5","description":"strongest reasoning tier, architecture and proofs"}
+]'
+
+PROMPT="${1:?usage: codex-routed \"task\" [codex args...]}"
+shift || true
+
+RESPONSE="$(curl -sS -X POST "$GATEWAY/api/route" \
+  -H 'Content-Type: application/json' \
+  --data "$(jq -n --arg p "$PROMPT" --argjson m "$LADDER" '{prompt:$p, models:$m}')")"
+
+MODEL="$(printf '%s' "$RESPONSE" | jq -r '.selected_model')"
+WHY="$(printf '%s' "$RESPONSE" | jq -r '.reasoning')"
+
+if [ -z "$MODEL" ] || [ "$MODEL" = "null" ]; then
+  echo "Router returned no model; falling back to the middle tier." >&2
+  MODEL="gpt-5.6-terra"
+fi
+
+echo "→ routed to ${MODEL}: ${WHY}" >&2
+# model_provider=openai keeps Codex on its own ChatGPT auth rather than the
+# gateway provider, so the call is covered by the subscription.
+exec codex exec -c model_provider="openai" -m "$MODEL" "$@" "$PROMPT"

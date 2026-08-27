@@ -17,7 +17,7 @@ from config import settings
 from db.database import init_db, engine
 from db.models import InferenceLog
 from services.enhancer import enhance_prompt
-from services.router import route_prompt
+from services.router import route_prompt, route_among
 from services.dispatcher import (
     dispatch_inference,
     dispatch_streaming_inference,
@@ -634,6 +634,40 @@ async def anthropic_messages_endpoint(
 @app.get("/v1/models")
 def list_v1_models():
     return build_models_response()
+
+# --- Advisory Routing (client executes the call itself) ---
+@app.post("/api/route")
+async def advise_route(raw_request: Dict[str, Any]):
+    """Recommend a model without performing the inference.
+
+    For clients that call their provider directly -- Codex on a ChatGPT
+    subscription, for instance -- proxying the request through this gateway
+    would move the spend onto pay-per-token API billing. Here the gateway only
+    decides, and the client keeps using the entitlement it already pays for.
+
+    `models` is ordered lightest first and supplied by the caller, so this
+    works for models the gateway itself cannot reach.
+    """
+    prompt = raw_request.get("prompt") or ""
+    if not prompt:
+        raise HTTPException(status_code=400, detail="`prompt` is required.")
+
+    ladder = raw_request.get("models") or []
+    normalised = [
+        {"id": m, "description": ""} if isinstance(m, str)
+        else {"id": m.get("id", ""), "description": m.get("description", "")}
+        for m in ladder
+    ]
+    normalised = [m for m in normalised if m["id"]]
+    if not normalised:
+        raise HTTPException(status_code=400, detail="`models` must be a non-empty ordered list.")
+
+    selected, reasoning = await route_among(prompt, normalised)
+    return {
+        "selected_model": selected,
+        "reasoning": reasoning,
+        "candidates": [m["id"] for m in normalised],
+    }
 
 # --- Enterprise Admin & Analytics APIs ---
 @app.get("/api/models")

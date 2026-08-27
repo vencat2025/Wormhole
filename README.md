@@ -341,3 +341,45 @@ Issues and pull requests are welcome. Please run the test suite before opening a
 ```bash
 pytest tests/ -q
 ```
+
+---
+
+## 🎯 Single-Vendor Routing (e.g. stay inside OpenAI)
+
+A common enterprise policy is not "switch vendors" but "stop defaulting to the
+flagship for routine work". `ROUTING_PROVIDERS` restricts routing to one vendor
+while still selecting the cheapest capable tier within it:
+
+```bash
+export ROUTING_PROVIDERS=openai   # only OpenAI models are eligible
+export ROUTER_MODE=llm            # semantic routing; see the note below
+python scripts/build_benchmark_dataset.py   # retrain within the restricted fleet
+python models/train_router.py
+```
+
+The allowlist applies to training as well as request time. The local classifier
+can only emit labels it saw in training, so restricting the fleet at runtime
+alone would leave it predicting models it may no longer pick, and falling back
+to a single default every time.
+
+Observed decisions with `ROUTING_PROVIDERS=openai` and `ROUTER_MODE=llm`:
+
+| Prompt | Routed to |
+|---|---|
+| `print hello world in python` | `gpt-4o-mini` |
+| `what is the capital of France` | `gpt-4o-mini` |
+| `summarise this paragraph in one line` | `gpt-4o-mini` |
+| `design a sharded write-ahead log ... prove durability` | `gpt-4o` |
+| `optimise this algorithm to O(n log n) and prove correctness` | `gpt-4o` |
+| `refactor payment reconciliation to be idempotent` | `gpt-4o` |
+
+### Which router to use
+
+`ROUTER_MODE=slm` is sub-millisecond but is bag-of-words over synthetic
+templates. It matches training phrasing well and **does not generalise**: on
+unseen wording it returns the majority class with ~0.97 confidence, so its
+confidence cannot be used to detect its own mistakes. It is suitable when your
+prompt distribution resembles the training set.
+
+`ROUTER_MODE=llm` costs one cheap model call (~200-400ms) and makes the
+decisions in the table above. Prefer it for demos and for open-ended traffic.

@@ -259,8 +259,20 @@ def render_prompt(benchmark: str, difficulty: str, rng: random.Random) -> str:
 
 
 def fleet_costs() -> Dict[str, float]:
-    """Input cost per model id, from the live fleet definition."""
-    return {m.id: m.input_cost_per_1k for m in settings.CANDIDATE_MODELS}
+    """Input cost per model id, from the live fleet definition.
+
+    ROUTING_PROVIDERS is applied here as well as at request time. The
+    classifier can only emit labels it saw in training, so restricting the
+    fleet at runtime alone would leave it predicting models it is no longer
+    allowed to pick and falling back to a single default every time. Training
+    on the same restricted set is what produces real routing *within* a
+    provider.
+    """
+    return {
+        m.id: m.input_cost_per_1k
+        for m in settings.CANDIDATE_MODELS
+        if settings.provider_allowed(m.provider)
+    }
 
 
 def select_optimal_model(benchmark: str, difficulty: str, costs: Dict[str, float]) -> Dict[str, Any]:

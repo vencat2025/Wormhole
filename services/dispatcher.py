@@ -373,6 +373,8 @@ def is_model_routable(model_id: str, need_tools: bool = False) -> bool:
     cfg = settings.model_config_for(model_id)
     if cfg is None:
         return False  # not in the fleet; nothing knows how to price or reach it
+    if not settings.provider_allowed(cfg.provider):
+        return False
     if not settings.provider_has_credentials(cfg.provider):
         return False
     if cfg.provider in UNAUTHENTICATED_PROVIDERS:

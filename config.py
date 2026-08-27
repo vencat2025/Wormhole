@@ -63,6 +63,22 @@ class Settings:
         if k.strip()
     ]
 
+    # Which router decides the model.
+    #   slm  - local classifier, sub-millisecond, but it is bag-of-words over
+    #          synthetic templates and does not generalise to unseen phrasing
+    #   llm  - one cheap model call, ~200-400ms, semantic and far more robust
+    #   auto - slm first, falling back to llm only if the classifier is absent
+    ROUTER_MODE: str = os.getenv("ROUTER_MODE", "auto").strip().lower()
+
+    # Restrict routing to specific providers. Empty means the whole fleet.
+    # Set e.g. ROUTING_PROVIDERS=openai to keep every request inside one
+    # vendor while still choosing the cheapest capable tier within it, which
+    # is the common enterprise case: the policy is "not always the flagship",
+    # not "switch vendors".
+    ROUTING_PROVIDERS: List[str] = [
+        p.strip().lower() for p in os.getenv("ROUTING_PROVIDERS", "").split(",") if p.strip()
+    ]
+
     # Circuit Breaker & Failover Settings
     CIRCUIT_BREAKER_THRESHOLD: int = 3  # Max consecutive failures before bypassing provider
 
@@ -159,6 +175,9 @@ class Settings:
             intelligence_tier="frontier"
         ),
     ]
+
+    def provider_allowed(self, provider: str) -> bool:
+        return not self.ROUTING_PROVIDERS or provider.lower() in self.ROUTING_PROVIDERS
 
     def provider_has_credentials(self, provider: str) -> bool:
         env_var = PROVIDER_KEY_ENV.get(provider)

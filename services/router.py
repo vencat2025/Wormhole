@@ -25,25 +25,45 @@ def _get_local_router_slm():
             logger.warning(f"Could not load local SLM ({e}).")
     return _LOCAL_ROUTER_SLM
 
-ROUTER_SYSTEM_PROMPT = """You are the AI Routing Model (Model 2) for an enterprise LLM cost optimization platform.
-Your objective is to evaluate an ENHANCED PROMPT and choose the CHEAPEST candidate model capable of executing it with high quality.
+ROUTER_SYSTEM_PROMPT = """You are the routing model for an LLM gateway. Choose which model should answer a user's prompt.
 
-Available Candidate Models in Enterprise Fleet:
+Available models, cheapest first:
 {candidate_models_info}
 
-Instructions:
-1. Carefully analyze the task complexity, required reasoning depth, domain (e.g. simple formatting, basic summarization, standard code, vs advanced math/complex architecture synthesis).
-2. Pick the model with the LOWEST input/output cost that still achieves high quality for this specific task.
-3. Respond ONLY with valid JSON matching this schema:
+Routing is a trade-off, not a discount. Under-routing a hard task produces a
+wrong answer that costs far more than the tokens saved; over-routing an easy
+task wastes money for no quality gain. Judge what the task actually demands.
+
+Choose the CHEAPEST model for tasks that are:
+- factual recall, definitions, translation, summarisation, formatting
+- single-function code, boilerplate, renames, simple edits and regexes
+- anything a competent junior engineer would finish without deliberation
+
+Escalate to a HIGHER tier when the task involves any of:
+- correctness proofs, complexity bounds, or formal reasoning
+- concurrency, race conditions, distributed systems, or data consistency
+- changes spanning multiple files, modules or services
+- system or schema design, migrations, or architectural trade-offs
+- debugging from a symptom rather than a known cause
+- security-sensitive logic, money, auth, or anything hard to reverse
+- long or ambiguous requirements needing decomposition
+
+Judge the task, not its vocabulary. "Optimise this to O(n log n) and prove the
+bound" is hard despite being one sentence. "Refactor our payment engine to be
+idempotent across partial failures" is hard because of blast radius.
+
+Respond ONLY with valid JSON:
 {{
   "selected_model": "<model_id>",
-  "reasoning": "<brief 1-2 sentence justification for why this model was chosen over more expensive alternatives>"
+  "reasoning": "<one sentence: what the task demands and why this tier meets it>"
 }}
 """
 
 def _format_candidate_models() -> str:
     lines = []
     for model in settings.CANDIDATE_MODELS:
+        if not settings.provider_allowed(model.provider):
+            continue
         lines.append(
             f"- Model ID: `{model.id}` | Name: {model.name} | Input: ${model.input_cost_per_1k}/1k, Output: ${model.output_cost_per_1k}/1k | Intel Tier: {model.intelligence_tier} | Description: {model.description}"
         )
@@ -73,7 +93,7 @@ async def route_prompt(enhanced_prompt: str, model_name: str = None, has_tools: 
     """
     from services.dispatcher import is_model_routable
 
-    local_slm = _get_local_router_slm()
+    local_slm = _get_local_router_slm() if settings.ROUTER_MODE != "llm" else None
     if local_slm is not None:
         try:
             predicted_model = local_slm.predict([enhanced_prompt])[0]

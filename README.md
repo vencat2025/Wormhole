@@ -442,6 +442,38 @@ scripts/codex-routed "rename userCnt to userCount" --skip-git-repo-check -C .
 # → routed to gpt-5.6-luna: simple rename, a light tier handles it
 ```
 
+### How it differs from the proxy path
+
+In the proxy path the gateway carries the traffic, so the tokens are billed to
+whichever provider key it uses. In the advisory path it only answers "which
+tier?" and never sees the conversation, so the work stays on the subscription.
+
+```mermaid
+flowchart LR
+    User["👤 Developer\n'design a ledger migration'"] --> Wrap["scripts/codex-routed"]
+
+    subgraph Advice ["Gateway decides only — no inference"]
+        Wrap -->|"POST /api/route\nprompt + ordered ladder"| Router["🧭 Ladder Router\nlightest tier that fits"]
+        Router -->|"model id + reasoning"| Wrap
+    end
+
+    Wrap -->|"codex exec -m &lt;model&gt;"| Codex["💻 Codex CLI\nChatGPT auth"]
+    Codex -->|"native call, billed to subscription"| OpenAI["OpenAI"]
+    OpenAI --> Files["📝 Files written in the workspace"]
+
+    Router -.->|"lightest"| L["gpt-5.6-luna"]
+    Router -.->|"balanced"| T["gpt-5.6-terra"]
+    Router -.->|"strongest"| S["gpt-5.5"]
+
+    style Advice fill:#eef2ff,stroke:#6366f1
+    style OpenAI fill:#ecfdf5,stroke:#10b981
+```
+
+The gateway is out of the data path entirely: the prompt goes to it for a
+routing decision, but the conversation, the tool calls and the file writes all
+happen between Codex and OpenAI directly. That is also why these runs do not
+appear on the cost dashboard — the gateway never sees the tokens.
+
 `POST /api/route` takes the prompt and an ordered ladder (lightest first) and
 returns a model id. It performs no inference, so it works for models this
 gateway cannot itself reach.

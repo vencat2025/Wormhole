@@ -1,21 +1,10 @@
-from flask import Flask, render_template_string
+from flask import Flask, send_from_directory
 
 app = Flask(__name__)
 
-@app.route('/')
-def home():
-    return render_template_string('''
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <title>Image Display</title>
-        </head>
-        <body>
-            <img src="/static/image.jpg" alt="Sample Image">
-        </body>
-        </html>
-    ''')
+@app.route('/image')
+def show_image():
+    return send_from_directory('images', 'example.jpg')
 
 if __name__ == '__main__':
     app.run(debug=True)

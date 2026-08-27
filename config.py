@@ -67,6 +67,10 @@ class Settings:
         if k.strip()
     ]
 
+    # Base URL for locally hosted models. Everything routed through an
+    # ollama/ id stays on this machine.
+    OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+
     # Which router decides the model.
     #   slm  - local classifier, sub-millisecond, but it is bag-of-words over
     #          synthetic templates and does not generalise to unseen phrasing

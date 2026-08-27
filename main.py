@@ -15,7 +15,7 @@ from sqlmodel import Session, select, func
 
 from config import settings
 from db.database import init_db, engine
-from db.models import InferenceLog
+from db.models import InferenceLog, RoutingDecision
 from services.enhancer import enhance_prompt
 from services.router import route_prompt, route_among
 from services.dispatcher import (
@@ -637,7 +637,10 @@ def list_v1_models():
 
 # --- Advisory Routing (client executes the call itself) ---
 @app.post("/api/route")
-async def advise_route(raw_request: Dict[str, Any]):
+async def advise_route(
+    raw_request: Dict[str, Any],
+    auth_token: str = Depends(verify_api_key)
+):
     """Recommend a model without performing the inference.
 
     For clients that call their provider directly -- Codex on a ChatGPT
@@ -663,11 +666,25 @@ async def advise_route(raw_request: Dict[str, Any]):
         raise HTTPException(status_code=400, detail="`models` must be a non-empty ordered list.")
 
     selected, reasoning = await route_among(prompt, normalised)
-    return {
-        "selected_model": selected,
-        "reasoning": reasoning,
-        "candidates": [m["id"] for m in normalised],
-    }
+
+    ids = [m["id"] for m in normalised]
+    try:
+        with Session(engine) as session:
+            session.add(RoutingDecision(
+                prompt=prompt[:4000],
+                selected_model=selected,
+                reasoning=reasoning,
+                router_model=settings.ROUTER_MODEL,
+                tier_index=ids.index(selected) if selected in ids else 0,
+                ladder_size=len(ids),
+                client=raw_request.get("client"),
+            ))
+            session.commit()
+    except Exception as db_err:
+        # Never fail the caller's routing because logging broke.
+        logger.error(f"Failed to record routing decision: {db_err}")
+
+    return {"selected_model": selected, "reasoning": reasoning, "candidates": ids}
 
 # --- Enterprise Admin & Analytics APIs ---
 @app.get("/api/models")
@@ -698,6 +715,39 @@ def list_logs(limit: int = 50, offset: int = 0):
             },
             "logs": logs
         }
+
+@app.get("/api/routing/decisions")
+def routing_decisions(limit: int = 50):
+    """Advisory routing history.
+
+    Reports tier usage rather than spend. Under a subscription the bill is
+    fixed, so the meaningful question is how often the heavyweight tier was
+    reached for, not what it cost.
+    """
+    with Session(engine) as session:
+        rows = session.exec(
+            select(RoutingDecision).order_by(RoutingDecision.id.desc()).limit(limit)
+        ).all()
+        total = session.exec(select(func.count(RoutingDecision.id))).one()
+
+        by_model = {}
+        for r in session.exec(select(RoutingDecision)).all():
+            by_model[r.selected_model] = by_model.get(r.selected_model, 0) + 1
+
+        # "Top tier" means the last rung of the ladder the caller offered.
+        top = session.exec(select(func.count(RoutingDecision.id)).where(
+            RoutingDecision.tier_index == RoutingDecision.ladder_size - 1
+        )).one() or 0
+
+    return {
+        "summary": {
+            "total_decisions": total,
+            "top_tier_decisions": top,
+            "top_tier_percentage": round((top / total * 100) if total else 0.0, 1),
+            "by_model": by_model,
+        },
+        "decisions": rows,
+    }
 
 @app.get("/api/dataset/export")
 def export_dataset(target: str = "router", min_score: float = 7.0):
@@ -825,6 +875,28 @@ def get_dashboard():
         </tbody>
     </table>
 
+    <div class="section-title" style="margin-top:32px;">
+        <span>Advisory Routing Decisions (client executed the call itself)</span>
+        <span id="toptier-badge" class="tag tag-model">&mdash;</span>
+    </div>
+    <p style="color:var(--text-sub); font-size:13px; margin-bottom:12px;">
+        These runs never passed through the gateway, so there are no tokens or cost to report.
+        Under a subscription the bill is fixed &mdash; what matters is how often the heaviest tier was used.
+    </p>
+    <table>
+        <thead>
+            <tr>
+                <th>⏰ Timestamp</th>
+                <th>📥 Task</th>
+                <th>🎯 Tier Chosen</th>
+                <th>Reasoning</th>
+            </tr>
+        </thead>
+        <tbody id="routing-body">
+            <tr><td colspan="4" style="text-align:center;color:var(--text-sub);">No advisory routing yet. Try <code>scripts/codex-routed</code>.</td></tr>
+        </tbody>
+    </table>
+
     <script>
         function escapeHtml(str) {
             if (!str) return '';
@@ -922,8 +994,33 @@ def get_dashboard():
             }
         }
 
+        async function fetchRouting() {
+            try {
+                const res = await fetch('/api/routing/decisions?limit=25');
+                const data = await res.json();
+                const s = data.summary;
+                const badge = document.getElementById('toptier-badge');
+                badge.innerText = `Top tier used in ${s.top_tier_decisions} of ${s.total_decisions} (${s.top_tier_percentage}%)`;
+
+                const tbody = document.getElementById('routing-body');
+                if (!data.decisions.length) return;
+                tbody.innerHTML = data.decisions.map(d => `
+                    <tr>
+                        <td style="font-size:11px;color:#cbd5e1;white-space:nowrap;">${formatLocalDate(d.created_at)}</td>
+                        <td><div class="prompt-preview" title="${escapeHtml(d.prompt)}">${escapeHtml(d.prompt)}</div></td>
+                        <td><span class="tag tag-model">${escapeHtml(d.selected_model)}</span>
+                            <div style="font-size:11px;color:var(--text-sub);margin-top:4px;">tier ${d.tier_index + 1} of ${d.ladder_size}</div></td>
+                        <td style="font-size:12px;color:var(--text-sub);max-width:320px;">${escapeHtml(d.reasoning || '')}</td>
+                    </tr>`).join('');
+            } catch (err) {
+                console.error('Error loading routing decisions', err);
+            }
+        }
+
         fetchAnalytics();
+        fetchRouting();
         setInterval(fetchAnalytics, 5000);
+        setInterval(fetchRouting, 5000);
     </script>
 </body>
 </html>

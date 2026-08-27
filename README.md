@@ -471,8 +471,43 @@ flowchart LR
 
 The gateway is out of the data path entirely: the prompt goes to it for a
 routing decision, but the conversation, the tool calls and the file writes all
-happen between Codex and OpenAI directly. That is also why these runs do not
-appear on the cost dashboard — the gateway never sees the tokens.
+happen between Codex and OpenAI directly.
+
+### Running the router entirely on your machine
+
+Routing does not require a cloud call. Point `ROUTER_MODEL` at a local model and
+no prompt leaves the laptop:
+
+```bash
+export ROUTER_MODEL=ollama/qwen2.5-coder:7b
+```
+
+Measured on the ladder above, a local 7B router picked the same tiers as the
+cloud one — lightest for a rename and a unit test, balanced for a cross-service
+race condition, strongest for a ledger migration with a proof obligation — at
+roughly 2.3-2.5s per decision after the model is warm, against ~300ms for a
+hosted router. Per task that is unnoticeable; on the proxy path, where routing
+runs on every turn, it is not, so `ROUTER_MODEL` is worth setting per use case.
+
+The trained classifier (`ROUTER_MODE=slm`) is local and sub-millisecond, but it
+only knows the labels it was trained on and cannot judge an arbitrary
+caller-supplied ladder, so `/api/route` always uses a model. Making that model a
+local one is what keeps the system self-contained.
+
+### What the dashboard shows for these runs
+
+Advisory runs carry no tokens, latency or cost, so they cannot appear in the
+inference table. They are recorded separately, and the dashboard reports the
+metric that actually applies under a subscription: **how often the heaviest tier
+was reached for.** The bill is fixed; tier usage is not.
+
+`GET /api/routing/decisions` returns the same data as JSON:
+
+```json
+{"summary": {"total_decisions": 3, "top_tier_decisions": 1,
+             "top_tier_percentage": 33.3,
+             "by_model": {"gpt-5.6-luna": 2, "gpt-5.5": 1}}}
+```
 
 `POST /api/route` takes the prompt and an ordered ladder (lightest first) and
 returns a model id. It performs no inference, so it works for models this

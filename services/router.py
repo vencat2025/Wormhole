@@ -128,12 +128,14 @@ async def route_prompt(enhanced_prompt: str, model_name: str = None, has_tools: 
     system_prompt = ROUTER_SYSTEM_PROMPT.format(candidate_models_info=candidate_info)
     
     try:
+        router_kwargs = {"api_base": settings.OLLAMA_BASE_URL} if model.startswith("ollama/") else {}
         response = await litellm.acompletion(
             model=model,
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": f"Enhanced Prompt to Route:\n{enhanced_prompt}"}
             ],
+            **router_kwargs,
             response_format={"type": "json_object"},
             temperature=0.1,
             max_tokens=512
@@ -231,6 +233,10 @@ async def route_among(prompt: str, ladder: List[Dict[str, str]]) -> Tuple[str, s
         f"{i}. {m.get('id')} - {m.get('description', 'no description')}"
         for i, m in enumerate(ladder)
     )
+    router_kwargs = {}
+    if settings.ROUTER_MODEL.startswith("ollama/"):
+        router_kwargs["api_base"] = settings.OLLAMA_BASE_URL
+
     try:
         response = await litellm.acompletion(
             model=settings.ROUTER_MODEL,
@@ -238,6 +244,7 @@ async def route_among(prompt: str, ladder: List[Dict[str, str]]) -> Tuple[str, s
                 {"role": "system", "content": LADDER_ROUTER_PROMPT.format(ladder=rendered)},
                 {"role": "user", "content": f"Task:\n{prompt}"},
             ],
+            **router_kwargs,
             response_format={"type": "json_object"},
             temperature=0.1,
             max_tokens=256,

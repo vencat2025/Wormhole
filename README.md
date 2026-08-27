@@ -438,9 +438,23 @@ instead **advise and step aside**: it picks the tier, and Codex makes the call
 itself on the entitlement you already pay for.
 
 ```bash
+# Interactive TUI (default)
 scripts/codex-routed "rename userCnt to userCount" --skip-git-repo-check -C .
 # → routed to gpt-5.6-luna: simple rename, a light tier handles it
+
+# Non-interactive
+scripts/codex-routed --exec "rename userCnt to userCount" --skip-git-repo-check -C .
 ```
+
+Both modes work the same way: the opening task decides the tier, then Codex is
+launched with `-m <model>` and talks to OpenAI itself.
+
+**The model is fixed for the session.** Routing happens once, before Codex
+starts, because that is the only point at which the model can be set from
+outside. In a long interactive session where the work turns out harder than the
+opening message suggested, switch by hand with `/models` in the TUI — it changes
+the model and preserves the current reasoning effort. Per-turn routing is only
+possible on the proxy path, where the gateway sees every turn and pays for it.
 
 ### How it differs from the proxy path
 

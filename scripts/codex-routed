@@ -5,37 +5,52 @@
 # through the gateway would move the same work onto pay-per-token API billing,
 # so here the gateway only decides and never touches the traffic.
 #
-# Granularity is per invocation, not per turn: the model is fixed for the
-# session Codex starts.
+# Usage:
+#   scripts/codex-routed "task" [codex args...]         # interactive TUI
+#   scripts/codex-routed --exec "task" [codex args...]  # non-interactive
 #
-# Usage: scripts/codex-routed "your task" [extra codex args...]
+# The model is chosen from the opening task and is then FIXED for the session.
+# Codex cannot be told to switch tiers mid-conversation from outside; use
+# /model inside the TUI if the work turns out harder than it looked.
 set -euo pipefail
 
 GATEWAY="${WORMHOLE_URL:-http://127.0.0.1:8000}"
+
 # Ordered lightest first. Only models a ChatGPT account may use belong here;
-# general API model ids are rejected by Codex under subscription auth.
-LADDER='[
+# general API model ids are rejected under subscription auth. Override with
+# WORMHOLE_LADDER to match your own account.
+DEFAULT_LADDER='[
   {"id":"gpt-5.6-luna","description":"lightest agentic tier, routine edits and simple tasks"},
   {"id":"gpt-5.6-terra","description":"balanced everyday coding, multi-step work"},
   {"id":"gpt-5.5","description":"strongest reasoning tier, architecture and proofs"}
 ]'
+LADDER="${WORMHOLE_LADDER:-$DEFAULT_LADDER}"
 
-PROMPT="${1:?usage: codex-routed \"task\" [codex args...]}"
+MODE="tui"
+if [ "${1:-}" = "--exec" ]; then MODE="exec"; shift; fi
+
+PROMPT="${1:?usage: codex-routed [--exec] \"task\" [codex args...]}"
 shift || true
 
-RESPONSE="$(curl -sS -X POST "$GATEWAY/api/route" \
-  -H 'Content-Type: application/json' \
-  --data "$(jq -n --arg p "$PROMPT" --argjson m "$LADDER" '{prompt:$p, models:$m}')")"
+REQUEST="$(jq -n --arg p "$PROMPT" --argjson m "$LADDER" --arg c "codex-$MODE" \
+             '{prompt:$p, models:$m, client:$c}')"
+RESPONSE="$(curl -sS -X POST "$GATEWAY/api/route" -H 'Content-Type: application/json' --data "$REQUEST")"
 
-MODEL="$(printf '%s' "$RESPONSE" | jq -r '.selected_model')"
-WHY="$(printf '%s' "$RESPONSE" | jq -r '.reasoning')"
+MODEL="$(printf '%s' "$RESPONSE" | jq -r '.selected_model // empty')"
+WHY="$(printf '%s' "$RESPONSE" | jq -r '.reasoning // empty')"
 
-if [ -z "$MODEL" ] || [ "$MODEL" = "null" ]; then
-  echo "Router returned no model; falling back to the middle tier." >&2
-  MODEL="gpt-5.6-terra"
+if [ -z "$MODEL" ]; then
+  echo "codex-routed: router returned no model; using the middle tier." >&2
+  MODEL="$(printf '%s' "$LADDER" | jq -r '.[(length/2|floor)].id')"
+  WHY="router unavailable"
 fi
 
 echo "→ routed to ${MODEL}: ${WHY}" >&2
+
 # model_provider=openai keeps Codex on its own ChatGPT auth rather than the
 # gateway provider, so the call is covered by the subscription.
-exec codex exec -c model_provider="openai" -m "$MODEL" "$@" "$PROMPT"
+if [ "$MODE" = "exec" ]; then
+  exec codex exec -c model_provider="openai" -m "$MODEL" "$@" "$PROMPT"
+else
+  exec codex -c model_provider="openai" -m "$MODEL" "$@" "$PROMPT"
+fi

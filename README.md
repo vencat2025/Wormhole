@@ -388,3 +388,41 @@ prompt distribution resembles the training set.
 
 `ROUTER_MODE=llm` costs one cheap model call (~200-400ms) and makes the
 decisions in the table above. Prefer it for demos and for open-ended traffic.
+
+### Policy ladders (`ROUTING_MODELS`)
+
+`ROUTING_PROVIDERS` restricts by vendor; `ROUTING_MODELS` restricts to an exact
+list, which is usually what a real policy is — a short ladder of approved
+tiers. Keep tiers non-overlapping: with both `gpt-4o-mini` and `gpt-5-mini`
+eligible at a similar price, the choice between them is arbitrary.
+
+```bash
+export ROUTING_MODELS="gpt-5-nano,gpt-5-mini,gpt-5.4,gpt-5.6-sol"
+export ROUTER_MODE=llm
+```
+
+Observed decisions on that ladder:
+
+| Prompt | Routed to |
+|---|---|
+| `what does this env var do` | `gpt-5-nano` |
+| `rename the variable userCnt to userCount` | `gpt-5-nano` |
+| `write a unit test for this date parsing helper` | `gpt-5-nano` |
+| `add pagination to the /users endpoint` | `gpt-5-mini` |
+| `fix the race condition in our connection pool across several services` | `gpt-5.4` |
+| `design the migration to move billing onto an event-sourced ledger` | `gpt-5.6-sol` |
+| `optimise this to O(n log n) and prove the bound is tight` | `gpt-5.4` |
+
+Only the genuine architectural task reaches the flagship.
+
+**The router consumes provider quota too.** `ROUTER_MODE=llm` spends one call
+per request against `ROUTER_MODEL`. Under rapid traffic that model can hit its
+own rate limit while the fleet is healthy. When the router cannot answer, the
+gateway degrades toward *capability* rather than cost — a task wrongly sent to
+a stronger model costs tokens, one wrongly sent to a weaker model costs a wrong
+answer. Point `ROUTER_MODEL` at a provider with headroom.
+
+> Prices for the 5-series entries in `config.py` are placeholders that preserve
+> tier ordering, marked `pricing_verified=False`. Routing depends only on the
+> ordering, but replace them with published rates before trusting any dollar
+> figure.

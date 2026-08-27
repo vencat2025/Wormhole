@@ -62,7 +62,7 @@ Respond ONLY with valid JSON:
 def _format_candidate_models() -> str:
     lines = []
     for model in settings.CANDIDATE_MODELS:
-        if not settings.provider_allowed(model.provider):
+        if not settings.provider_allowed(model.provider) or not settings.model_allowed(model.id):
             continue
         lines.append(
             f"- Model ID: `{model.id}` | Name: {model.name} | Input: ${model.input_cost_per_1k}/1k, Output: ${model.output_cost_per_1k}/1k | Intel Tier: {model.intelligence_tier} | Description: {model.description}"
@@ -151,21 +151,37 @@ async def route_prompt(enhanced_prompt: str, model_name: str = None, has_tools: 
         return selected_model, reasoning
 
     except Exception as e:
-        logger.warning(f"Router API call failed or unconfigured ({e}). Utilizing fallback heuristic routing.")
-        prompt_len = len(enhanced_prompt)
-        has_complex_keywords = any(w in enhanced_prompt.lower() for w in ["architecture", "refactor whole system", "formal proof", "quantum", "autonomous"])
+        # The router itself consumes provider quota, so under rapid traffic it
+        # can fail while the fleet is healthy. The old behaviour fell through
+        # to the cheapest allowed model, which silently under-routes exactly
+        # when routing stopped working. Degrade toward capability instead:
+        # a task wrongly sent to a stronger model costs tokens, one wrongly
+        # sent to a weaker model costs a wrong answer.
+        logger.warning(f"Router call failed ({e}); using degraded tier heuristics.")
 
-        # Preference order by capability; the first reachable one wins, so a
-        # dead provider degrades the choice instead of the request.
-        if has_complex_keywords:
-            preferred = ["gpt-4o", "gemini/gemini-2.5-pro", "groq/openai/gpt-oss-120b"]
-            reasoning = "Heuristic routing: high-complexity reasoning keywords detected."
-        elif prompt_len > 3000:
-            preferred = ["gemini/gemini-2.5-flash", "groq/openai/gpt-oss-20b"]
-            reasoning = "Heuristic routing: long context favours a cheap large-context model."
+        prompt_lower = enhanced_prompt.lower()
+        complex_signals = (
+            "architecture", "migration", "concurren", "race condition", "deadlock",
+            "distributed", "prove", "proof", "complexity", "optimis", "optimiz",
+            "refactor", "security", "idempoten", "multi-file", "across services",
+        )
+        looks_hard = any(w in prompt_lower for w in complex_signals) or len(enhanced_prompt) > 3000
+
+        def by_tier(*tiers):
+            for tier in tiers:
+                for m in sorted(settings.CANDIDATE_MODELS, key=lambda c: -c.input_cost_per_1k):
+                    if m.intelligence_tier == tier and is_model_routable(m.id, need_tools=has_tools):
+                        return m.id
+            return ""
+
+        if looks_hard:
+            selected_model = by_tier("frontier", "high", "medium")
+            why = "degraded heuristics: complexity signals present, holding at a capable tier"
         else:
-            preferred = ["groq/openai/gpt-oss-20b", "gpt-4o-mini"]
-            reasoning = "Heuristic routing: standard task complexity, lowest-cost capable model."
+            # Not "cheapest available" but a middle tier, since this path runs
+            # precisely when the gateway cannot assess the task properly.
+            selected_model = by_tier("medium", "high", "basic")
+            why = "degraded heuristics: no complexity signals, mid tier chosen"
 
-        selected_model = _first_routable(preferred, has_tools) or settings.FALLBACK_MODEL
-        return selected_model, f"{reasoning} Selected '{selected_model}'."
+        selected_model = selected_model or settings.FALLBACK_MODEL
+        return selected_model, f"⚠️ Router unavailable ({type(e).__name__}); {why}. Selected '{selected_model}'."

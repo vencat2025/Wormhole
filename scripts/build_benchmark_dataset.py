@@ -271,7 +271,7 @@ def fleet_costs() -> Dict[str, float]:
     return {
         m.id: m.input_cost_per_1k
         for m in settings.CANDIDATE_MODELS
-        if settings.provider_allowed(m.provider)
+        if settings.provider_allowed(m.provider) and settings.model_allowed(m.id)
     }
 
 

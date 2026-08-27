@@ -18,6 +18,10 @@ class CandidateModelConfig(BaseModel):
     # Whether the model emits native OpenAI-style function calls. A model that
     # cannot do this is unusable for agentic turns no matter how capable it is.
     supports_tools: bool = True
+    # False means the rates below are placeholders chosen to preserve tier
+    # ordering, not published prices. Routing is unaffected (it depends on
+    # ordering), but every dollar figure derived from them is provisional.
+    pricing_verified: bool = True
 
 
 # Credential each provider needs before any of its models can be reached.
@@ -69,6 +73,14 @@ class Settings:
     #   llm  - one cheap model call, ~200-400ms, semantic and far more robust
     #   auto - slm first, falling back to llm only if the classifier is absent
     ROUTER_MODE: str = os.getenv("ROUTER_MODE", "auto").strip().lower()
+
+    # Restrict routing to an explicit set of model ids. Narrower than
+    # ROUTING_PROVIDERS and usually what a real policy looks like: a short
+    # ladder of approved tiers rather than "whatever this vendor sells".
+    # Overlapping tiers make the choice arbitrary, so keep the ladder clean.
+    ROUTING_MODELS: List[str] = [
+        m.strip() for m in os.getenv("ROUTING_MODELS", "").split(",") if m.strip()
+    ]
 
     # Restrict routing to specific providers. Empty means the whole fleet.
     # Set e.g. ROUTING_PROVIDERS=openai to keep every request inside one
@@ -164,6 +176,54 @@ class Settings:
             speed_tier="fast",
             intelligence_tier="high"
         ),
+        # OpenAI 5-series. These ids were confirmed against /v1/models on a
+        # live account; an earlier revision removed them believing they were
+        # invented, which was wrong -- what was invented were their benchmark
+        # figures. Rates are placeholders pending the published price list.
+        CandidateModelConfig(
+            id="gpt-5-nano",
+            name="GPT-5 Nano",
+            provider="openai",
+            input_cost_per_1k=0.00005,
+            output_cost_per_1k=0.0004,
+            description="Smallest 5-series tier for trivial recall, formatting and one-line edits.",
+            speed_tier="ultra-fast",
+            intelligence_tier="basic",
+            pricing_verified=False
+        ),
+        CandidateModelConfig(
+            id="gpt-5-mini",
+            name="GPT-5 Mini",
+            provider="openai",
+            input_cost_per_1k=0.00025,
+            output_cost_per_1k=0.0020,
+            description="Everyday 5-series tier for routine coding, refactors and summarisation.",
+            speed_tier="fast",
+            intelligence_tier="medium",
+            pricing_verified=False
+        ),
+        CandidateModelConfig(
+            id="gpt-5.4",
+            name="GPT-5.4",
+            provider="openai",
+            input_cost_per_1k=0.00125,
+            output_cost_per_1k=0.0100,
+            description="Strong 5-series reasoning tier for multi-file work and non-trivial debugging.",
+            speed_tier="medium",
+            intelligence_tier="high",
+            pricing_verified=False
+        ),
+        CandidateModelConfig(
+            id="gpt-5.6-sol",
+            name="GPT-5.6 Sol",
+            provider="openai",
+            input_cost_per_1k=0.00250,
+            output_cost_per_1k=0.0200,
+            description="Flagship agentic coding model for architecture, proofs and high blast-radius changes.",
+            speed_tier="medium",
+            intelligence_tier="frontier",
+            pricing_verified=False
+        ),
         CandidateModelConfig(
             id="gpt-4o",
             name="GPT-4o",
@@ -178,6 +238,9 @@ class Settings:
 
     def provider_allowed(self, provider: str) -> bool:
         return not self.ROUTING_PROVIDERS or provider.lower() in self.ROUTING_PROVIDERS
+
+    def model_allowed(self, model_id: str) -> bool:
+        return not self.ROUTING_MODELS or model_id in self.ROUTING_MODELS
 
     def provider_has_credentials(self, provider: str) -> bool:
         env_var = PROVIDER_KEY_ENV.get(provider)

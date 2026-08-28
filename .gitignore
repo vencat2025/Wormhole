@@ -6,3 +6,5 @@ wormhole.db
 *.log
 .env
 data/exhausted_providers.json
+*.swp
+*.swo

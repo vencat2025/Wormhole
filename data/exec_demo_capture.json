@@ -1,0 +1,80 @@
+{
+  "total_requests": 671,
+  "actual": 0.158638,
+  "baseline": 2.572819,
+  "ptok": 139045,
+  "ctok": 222519,
+  "savings_pct": 93.8,
+  "dist": [
+    [
+      "groq/openai/gpt-oss-120b",
+      204
+    ],
+    [
+      "gemini/gemini-1.5-flash",
+      95
+    ],
+    [
+      "groq/openai/gpt-oss-20b",
+      89
+    ],
+    [
+      "groq/llama-3.3-70b-versatile",
+      86
+    ],
+    [
+      "ollama/qwen2.5-coder:7b",
+      78
+    ]
+  ],
+  "adv": [
+    [
+      "gpt-5.6-luna",
+      17
+    ],
+    [
+      "gpt-5.5",
+      7
+    ],
+    [
+      "gpt-5.6-terra",
+      2
+    ]
+  ],
+  "adv_total": 26,
+  "top_tier": 7,
+  "top_pct": 26.9,
+  "routes": [
+    {
+      "label": "Trivial",
+      "task": "rename the variable userCnt to userCount",
+      "model": "gpt-5.6-luna",
+      "why": "Simple variable rename is a trivial edit suitable for the lightest tier"
+    },
+    {
+      "label": "Routine",
+      "task": "write a unit test for the date parsing helper",
+      "model": "gpt-5.6-luna",
+      "why": "Writing a unit test for a helper is a simple, routine coding task suitable for the lightest tier."
+    },
+    {
+      "label": "Routine",
+      "task": "add pagination to the /users endpoint",
+      "model": "gpt-5.6-luna",
+      "why": "Adding pagination to a single endpoint is a straightforward code edit suitable for the lightest tier"
+    },
+    {
+      "label": "Complex",
+      "task": "fix the race condition in our connection pool across services",
+      "model": "gpt-5.5",
+      "why": "Concurrency and race condition across services require strong reasoning and design, so the strongest tier is needed."
+    },
+    {
+      "label": "Critical",
+      "task": "design a zero-downtime billing migration and prove no double-charge",
+      "model": "gpt-5.5",
+      "why": "Requires system design, concurrency handling, and a formal proof of no double-charge, which exceeds simple edits and needs the strongest reasoning tier."
+    }
+  ],
+  "feedback": 114
+}

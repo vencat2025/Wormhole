@@ -12,6 +12,13 @@ in it is read from `data/demo_capture.json`, written by an actual request
 through the gateway, and regenerated with `python scripts/record_terminal_demo.py`.
 If a run routes somewhere unexpected or scores badly, the video shows that.
 
+For a non-technical audience there is
+[docs/wormhole_exec_demo.mp4](docs/wormhole_exec_demo.mp4)
+(`python scripts/record_exec_demo.py`), built the same way from
+`data/exec_demo_capture.json`. It states on screen which of its figures are
+measured and which are estimates, so nothing in it is repeated in a meeting
+without its caveat attached.
+
 > **Project status and scope.** This is a working single-developer project, not a
 > hardened product. Provider support is real but depends on your own keys: the
 > routing fleet is defined in `config.py`, and any model whose provider has no

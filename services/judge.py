@@ -24,11 +24,31 @@ Respond ONLY with valid JSON matching this schema:
 }
 """
 
+
+AGENTIC_JUDGE_PROMPT = """You are judging a turn from an autonomous coding agent that has real tool access.
+
+The agent works by CALLING TOOLS to create and change files, then reporting briefly what it did. You are shown the tool calls it made and its closing message.
+
+Score whether THE ACTIONS ACCOMPLISH THE TASK:
+- 1.0 - 4.0: no tool calls when the task needed them; the wrong files or commands; broken or irrelevant actions; or the agent explained what the user should do instead of doing it.
+- 5.0 - 7.0: the task is mostly carried out, with a missing step, a wrong path, or an unverified result.
+- 8.0 - 10.0: the tool calls correctly accomplish the task, and the closing message reports it accurately.
+
+Judge the actions, not the prose. A short closing summary alongside correct tool calls is the CORRECT shape for this turn and must not be penalised for lacking inline code -- the code was written to disk. Pasting code into the reply INSTEAD of calling tools is a failure, not a strength.
+
+Respond ONLY with valid JSON matching this schema:
+{
+  "score": <float between 1.0 and 10.0>,
+  "feedback": "<brief 1-2 sentence explanation of the score>"
+}
+"""
+
 async def evaluate_completion(
     request_id: str,
     enhanced_prompt: str,
     completion: str,
-    judge_model_name: Optional[str] = None
+    judge_model_name: Optional[str] = None,
+    agentic: bool = False
 ) -> Tuple[float, str]:
     """
     Evaluates the quality of the completion using LLM-as-a-Judge and saves results to DB.
@@ -45,7 +65,7 @@ async def evaluate_completion(
         response = await litellm.acompletion(
             model=model,
             messages=[
-                {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
+                {"role": "system", "content": AGENTIC_JUDGE_PROMPT if agentic else JUDGE_SYSTEM_PROMPT},
                 {
                     "role": "user",
                     "content": f"ENHANCED PROMPT:\n{enhanced_prompt}\n\nAI COMPLETION:\n{completion}"

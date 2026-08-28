@@ -6,6 +6,12 @@
 
 ![WormHole Automated Demo Recording](docs/wormhole_demo.gif)
 
+A short recording of one real routed run is at
+[docs/wormhole_terminal_demo.mp4](docs/wormhole_terminal_demo.mp4). Every figure
+in it is read from `data/demo_capture.json`, written by an actual request
+through the gateway, and regenerated with `python scripts/record_terminal_demo.py`.
+If a run routes somewhere unexpected or scores badly, the video shows that.
+
 > **Project status and scope.** This is a working single-developer project, not a
 > hardened product. Provider support is real but depends on your own keys: the
 > routing fleet is defined in `config.py`, and any model whose provider has no

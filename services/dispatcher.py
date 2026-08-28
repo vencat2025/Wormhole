@@ -501,7 +501,7 @@ def describe_tool_calls(calls: List[Dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def schedule_judging(request_id: str, enhanced_prompt: str, completion: str) -> None:
+def schedule_judging(request_id: str, enhanced_prompt: str, completion: str, agentic: bool = False) -> None:
     """Score a streamed completion once the stream has finished.
 
     Streaming responses return before any judging could run, so the endpoint
@@ -518,6 +518,7 @@ def schedule_judging(request_id: str, enhanced_prompt: str, completion: str) -> 
             request_id=request_id,
             enhanced_prompt=enhanced_prompt,
             completion=completion,
+            agentic=agentic,
         ))
         # asyncio holds only a weak reference to a running task, so one that
         # nothing awaits can be collected mid-flight and simply never run.
@@ -1507,10 +1508,15 @@ async def dispatch_responses_streaming_inference(
     except Exception as db_err:
         logger.error(f"Failed to save responses streaming log: {db_err}")
 
-    judged_text = full_completion or describe_tool_calls([
+    tool_summary = describe_tool_calls([
         {"name": fn["name"], "arguments": fn["arguments"]} for fn in active_fn_calls.values()
     ])
-    schedule_judging(request_id, enhanced_prompt, judged_text)
+    # The agent's closing message alone reads as if it did nothing. The judge
+    # needs the actions too, or it penalises correct tool use for "not
+    # providing the code" -- which would train the router to prefer models
+    # that paste tutorials.
+    judged_text = "\n\n".join(p for p in (tool_summary, full_completion) if p)
+    schedule_judging(request_id, enhanced_prompt, judged_text, agentic=bool(tools))
 
 
 async def dispatch_anthropic_streaming_inference(
@@ -1745,10 +1751,11 @@ async def dispatch_anthropic_streaming_inference(
         router_reasoning=router_reasoning + " | Anthropic Messages Streamed",
         completion=full_completion,
     )
-    judged_text = full_completion or describe_tool_calls([
+    tool_summary = describe_tool_calls([
         {"name": meta["name"], "arguments": ""} for meta in active_tools.values()
     ])
-    schedule_judging(request_id, enhanced_prompt, judged_text)
+    judged_text = "\n\n".join(p for p in (tool_summary, full_completion) if p)
+    schedule_judging(request_id, enhanced_prompt, judged_text, agentic=bool(tools))
 
 
 def _log_inference(request_id, original_prompt, enhanced_prompt, enhancer_model,

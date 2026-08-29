@@ -189,6 +189,59 @@ def prune_messages_for_token_limit(messages: List[Dict[str, Any]], max_tokens: i
 
     return system_msgs + kept
 
+
+def repair_tool_call_pairing(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Make every assistant tool_call adjacent to the result that answers it.
+
+    OpenAI rejects a conversation where an assistant message carrying
+    tool_calls is not immediately followed by a tool message per call id:
+    "the following tool_call_ids did not have response messages". A harness
+    that issues parallel calls sends them as separate items, and converting
+    those one-for-one can interleave calls and results, or leave a call whose
+    result never arrived.
+
+    This regroups each call with its own result, and drops calls that have no
+    result and results that answer no call, since either one makes the whole
+    request fail rather than degrade.
+    """
+    results: Dict[str, Dict[str, Any]] = {
+        m["tool_call_id"]: m for m in messages
+        if m.get("role") == "tool" and m.get("tool_call_id")
+    }
+
+    out: List[Dict[str, Any]] = []
+    for m in messages:
+        if m.get("role") == "tool":
+            continue  # re-emitted next to the call it answers
+        calls = m.get("tool_calls") if m.get("role") == "assistant" else None
+        if not calls:
+            out.append(m)
+            continue
+
+        answered = [c for c in calls if c.get("id") in results]
+        if not answered:
+            # An assistant turn whose calls all went unanswered. Keep any text
+            # it carried so the thread still reads, but not the dangling calls.
+            text = m.get("content")
+            if text:
+                out.append({"role": "assistant", "content": text})
+            continue
+
+        if len(answered) != len(calls):
+            dropped = [c.get("id") for c in calls if c not in answered]
+            logger.info(f"Dropped {len(dropped)} unanswered tool_call(s): {dropped}")
+        out.append({**m, "tool_calls": answered})
+        out.extend(results[c["id"]] for c in answered)
+
+    # Anything still unmatched here would make the provider reject the whole
+    # request, so say so rather than letting it surface as an opaque 400.
+    ids = {c["id"] for m in out if m.get("tool_calls") for c in m["tool_calls"]}
+    answered_ids = {m["tool_call_id"] for m in out if m.get("role") == "tool"}
+    if ids - answered_ids:
+        logger.warning(f"tool_calls still unmatched after repair: {sorted(ids - answered_ids)}")
+    return out
+
+
 def extract_tool_calls_from_text(text: str) -> List[Dict[str, Any]]:
     tool_calls = []
     
@@ -689,7 +742,12 @@ async def dispatch_inference(
         active_model = settings.FALLBACK_MODEL
         router_reasoning += f" | Circuit Breaker Active for {selected_model} (Failed {PROVIDER_FAILURE_COUNTS.get(selected_model)} times). Automatic failover to {active_model}."
 
-    messages_to_send = list(original_messages)
+    # Same preparation as the streaming paths. Without it this path sent
+    # raw history: unpruned, and with tool calls possibly separated from
+    # the results answering them, which providers reject outright.
+    messages_to_send = repair_tool_call_pairing(
+        prune_messages_for_token_limit(list(original_messages))
+    )
 
     prompt_tokens = 0
     completion_tokens = 0
@@ -869,8 +927,17 @@ async def dispatch_streaming_inference(
                 "YOU MUST IMMEDIATELY CALL THE 'exec' TOOL (or output <exec>cat << 'EOF' > index.html ... </exec>) TO CREATE ALL NECESSARY FILES AND DIRECTORIES IN THE WORKSPACE IMMEDIATELY."
             )
         }
-    if selected_model.startswith("groq/"):
+    # Pruning only matters where the provider caps request size; pairing is a
+    # correctness requirement everywhere. Repair was previously inside this
+    # Groq-only branch, so an OpenAI request could be sent with its tool calls
+    # separated from the results answering them, and the provider rejected the
+    # whole conversation.
+    if PROVIDER_REQUEST_TOKEN_LIMITS.get(
+        (settings.model_config_for(selected_model).provider
+         if settings.model_config_for(selected_model) else None)
+    ):
         messages_to_send = prune_messages_for_token_limit(messages_to_send)
+    messages_to_send = repair_tool_call_pairing(messages_to_send)
 
     role_chunk = {
         "id": f"chatcmpl-{request_id}",
@@ -1179,8 +1246,17 @@ async def dispatch_responses_streaming_inference(
         }
         messages_to_send.insert(0, agentic_directive)
 
-    if selected_model.startswith("groq/"):
+    # Pruning only matters where the provider caps request size; pairing is a
+    # correctness requirement everywhere. Repair was previously inside this
+    # Groq-only branch, so an OpenAI request could be sent with its tool calls
+    # separated from the results answering them, and the provider rejected the
+    # whole conversation.
+    if PROVIDER_REQUEST_TOKEN_LIMITS.get(
+        (settings.model_config_for(selected_model).provider
+         if settings.model_config_for(selected_model) else None)
+    ):
         messages_to_send = prune_messages_for_token_limit(messages_to_send)
+    messages_to_send = repair_tool_call_pairing(messages_to_send)
 
     full_completion = ""
     reported_usage = None
@@ -1414,7 +1490,7 @@ async def dispatch_responses_streaming_inference(
                 logger.info(f"Attempting fallback model: {candidate}")
                 cand_messages = list(messages_to_send)
                 if candidate.startswith("groq/"):
-                    cand_messages = prune_messages_for_token_limit(cand_messages)
+                    cand_messages = repair_tool_call_pairing(prune_messages_for_token_limit(cand_messages))
 
                 cand_kwargs = {}
                 if candidate.startswith("ollama/"):
@@ -1710,7 +1786,7 @@ async def dispatch_anthropic_streaming_inference(
     request_id = f"wh-{uuid.uuid4().hex[:12]}"
     message_id = f"msg_{request_id}"
 
-    messages_to_send = prune_messages_for_token_limit(list(original_messages))
+    messages_to_send = repair_tool_call_pairing(prune_messages_for_token_limit(list(original_messages)))
 
     # Choose the model against the untrimmed request, then trim only if the
     # chosen model actually has a ceiling. Trimming first would discard tools

@@ -1,80 +1,68 @@
 {
-  "total_requests": 671,
-  "actual": 0.158638,
-  "baseline": 2.572819,
-  "ptok": 139045,
-  "ctok": 222519,
-  "savings_pct": 93.8,
+  "total_requests": 16,
+  "actual": 0.014789,
+  "baseline": 0.246505,
+  "ptok": 89710,
+  "ctok": 2223,
+  "savings_pct": 94.0,
   "dist": [
     [
       "groq/openai/gpt-oss-120b",
-      204
+      15
     ],
     [
-      "gemini/gemini-1.5-flash",
-      95
-    ],
-    [
-      "groq/openai/gpt-oss-20b",
-      89
-    ],
-    [
-      "groq/llama-3.3-70b-versatile",
-      86
-    ],
-    [
-      "ollama/qwen2.5-coder:7b",
-      78
+      "gpt-4o-mini",
+      1
     ]
   ],
   "adv": [
     [
-      "gpt-5.6-luna",
-      17
+      "gpt-5.5",
+      2
     ],
     [
-      "gpt-5.5",
-      7
+      "gpt-5.6-luna",
+      2
     ],
     [
       "gpt-5.6-terra",
-      2
+      1
     ]
   ],
-  "adv_total": 26,
-  "top_tier": 7,
-  "top_pct": 26.9,
+  "adv_total": 5,
+  "top_tier": 2,
+  "top_pct": 40.0,
   "routes": [
     {
       "label": "Trivial",
       "task": "rename the variable userCnt to userCount",
       "model": "gpt-5.6-luna",
-      "why": "Simple variable rename is a trivial edit suitable for the lightest tier"
+      "why": "Renaming a single variable is a trivial edit suitable for the lightest tier."
     },
     {
       "label": "Routine",
       "task": "write a unit test for the date parsing helper",
       "model": "gpt-5.6-luna",
-      "why": "Writing a unit test for a helper is a simple, routine coding task suitable for the lightest tier."
+      "why": "A simple unit test for a helper function is a routine coding task suitable for the lightest tier."
     },
     {
       "label": "Routine",
       "task": "add pagination to the /users endpoint",
-      "model": "gpt-5.6-luna",
-      "why": "Adding pagination to a single endpoint is a straightforward code edit suitable for the lightest tier"
+      "model": "gpt-5.6-terra",
+      "why": "Adding pagination likely touches multiple parts (controller, service) and requires careful integration, fitting the balanced tier."
     },
     {
       "label": "Complex",
       "task": "fix the race condition in our connection pool across services",
       "model": "gpt-5.5",
-      "why": "Concurrency and race condition across services require strong reasoning and design, so the strongest tier is needed."
+      "why": "Fixing a race condition in a connection pool across services involves concurrency and distributed consistency, requiring strong reasoning and design expertise."
     },
     {
       "label": "Critical",
       "task": "design a zero-downtime billing migration and prove no double-charge",
       "model": "gpt-5.5",
-      "why": "Requires system design, concurrency handling, and a formal proof of no double-charge, which exceeds simple edits and needs the strongest reasoning tier."
+      "why": "Requires system design across services and a correctness proof to ensure no double-charge, which exceeds simple edits"
     }
   ],
-  "feedback": 114
+  "feedback": 15
 }

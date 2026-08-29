@@ -147,8 +147,8 @@ def evidence_slide(cap):
 
     panel(d, 60, 480, 1480, 230, "HOW TO READ THESE")
     for i, t in enumerate([
-        "Model choices and request counts are measured directly from the log.",
-        "Token counts on streamed turns are estimated from length, not provider-reported usage.",
+        "Model choices, request counts and token usage are measured: providers report real usage per request.",
+        "Per-token rates come from litellm's maintained pricing map, not from numbers written in this repo.",
         "The GPT-4o baseline is a counterfactual: the same tokens priced at flagship rates, not an observed bill.",
     ]):
         d.text((90, 545 + i * 42), t, font=F_SMALL, fill=MUTED)

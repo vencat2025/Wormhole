@@ -5,11 +5,10 @@ each request and how many tokens it used. Nothing is asserted or assumed.
 
 One caveat is stated wherever the output is used: the baseline is a
 counterfactual. WormHole cannot know what a request would have cost had it
-gone elsewhere, so it prices the *same measured token counts* against the
-GPT-4o rates in config.py. That makes the savings figure an estimate of
-routing benefit under a fixed price table, not an observed invoice
-difference. The token counts and model choices are real; the comparison is
-constructed.
+gone elsewhere, so it prices the *same measured token counts* against
+GPT-4o rates. Token counts are reported by the provider and rates come from
+litellm's maintained pricing map, so both sides are measured or sourced; what
+is constructed is the comparison against a model you did not actually run.
 """
 
 import os
@@ -50,8 +49,8 @@ def main() -> int:
     print(f"Same tokens priced at the GPT-4o baseline: ${baseline:.4f}")
     if baseline > 0:
         print(f"Difference: ${baseline - actual:.4f} ({(baseline - actual) / baseline * 100:.1f}% lower)")
-    print("  (baseline is a counterfactual computed from config.py rates,")
-    print("   not an observed bill)")
+    print("  (token counts are provider-reported; rates come from litellm's")
+    print("   pricing map. The baseline is a counterfactual, not an observed bill)")
     print()
 
     dist = Counter(r.selected_model for r in rows)

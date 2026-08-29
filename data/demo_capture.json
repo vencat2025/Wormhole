@@ -1,14 +1,14 @@
 {
   "model": "groq/openai/gpt-oss-120b",
   "enhancer": "bypassed",
-  "judge": 6.0,
-  "ptok": 17,
-  "ctok": 0,
-  "actual": 3e-06,
-  "baseline": 4.3e-05,
+  "judge": 10.0,
+  "ptok": 5147,
+  "ctok": 169,
+  "actual": 0.000873,
+  "baseline": 0.014558,
   "files": [
     "fib.py"
   ],
   "fib": "#!/usr/bin/env python3\n\ndef fibonacci(n):\n    a, b = 0, 1\n    for _ in range(n):\n        yield a\n        a, b = b, a + b\n\nif __name__ == \"__main__\":\n    for num in fibonacci(10):\n        print(num)\n",
-  "feedback": 108
+  "feedback": 6
 }

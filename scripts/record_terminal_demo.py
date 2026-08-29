@@ -84,7 +84,7 @@ def build(cap):
     enh = cap["enhancer"]
     lines.append((f"    enhancer -> {enh}" + ("  (model already in a strong tier)" if enh == "bypassed" else ""), GREEN if enh != "bypassed" else DIM))
     hold(18)
-    lines.append((f"    tokens   -> {cap['ptok']} in / {cap['ctok']} out  (estimated on streamed turns)", DIM))
+    lines.append((f"    tokens   -> {cap['ptok']} in / {cap['ctok']} out  (provider-reported)", DIM))
     hold(18)
     lines.append((f"    cost     -> ${cap['actual']:.6f}   vs ${cap['baseline']:.6f} at the GPT-4o baseline", DIM))
     hold(30)

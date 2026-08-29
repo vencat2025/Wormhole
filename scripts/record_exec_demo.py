@@ -168,7 +168,37 @@ def loop_slide(cap):
         x += 290
     d.text((90, 500), f"{cap['feedback']} judged prompts are currently feeding the local router.", font=F_BODY, fill=WHITE)
     d.text((90, 550), "Routing is a local model on the machine. Prompts do not leave it to decide where to go.", font=F_BODY, fill=MUTED)
-    d.text((90, 600), "Quality is not yet benchmarked; the score is one model grading another.", font=F_BODY, fill=AMBER)
+    q = cap.get("quality")
+    if q:
+        d.text((90, 600), f"Quality is measured, not assumed: routed {q['routed_pct']}% vs {q['baseline_pct']}% "
+                          f"on {q['n']} executable tasks.", font=F_BODY, fill=AMBER)
+    return [img] * 150
+
+
+
+def tradeoff_slide(cap):
+    q = cap.get("quality")
+    if not q:
+        return []
+    img, d = base("The trade, measured")
+    d.text((60, 150), "Cheaper is not free", font=F_H2, fill=WHITE)
+
+    panel(d, 60, 250, 720, 300, "SAME TASKS, TWO POLICIES")
+    d.text((90, 310), "routed", font=F_BODY, fill=MUTED)
+    d.text((300, 305), f"{q['routed_pass']}/{q['n']}  ({q['routed_pct']}%)", font=F_H2, fill=GREEN)
+    d.text((90, 400), "always strong", font=F_BODY, fill=MUTED)
+    d.text((300, 395), f"{q['baseline_pass']}/{q['n']}  ({q['baseline_pct']}%)", font=F_H2, fill=WHITE)
+    d.text((90, 480), f"cost: {q['cost_note']}", font=F_SMALL, fill=MUTED)
+
+    panel(d, 820, 250, 720, 300, "WHAT THAT MEANS")
+    d.text((850, 310), f"{q['delta']} points of correctness", font=F_H2, fill=AMBER)
+    d.text((850, 375), "given up for the saving.", font=F_BODY, fill=MUTED)
+    d.text((850, 440), "Correctness is the benchmark's own", font=F_SMALL, fill=MUTED)
+    d.text((850, 470), "test suite, executed. Not a model's", font=F_SMALL, fill=MUTED)
+    d.text((850, 500), "opinion of another model.", font=F_SMALL, fill=MUTED)
+
+    d.text((60, 600), "Raise the floor and the gap narrows. The point is that it is now visible,", font=F_BODY, fill=MUTED)
+    d.text((60, 640), "and reproducible with one command on your own fleet.", font=F_BODY, fill=MUTED)
     return [img] * 150
 
 
@@ -186,7 +216,7 @@ def main():
         sys.exit(f"No capture at {CAPTURE}.")
     cap = json.load(open(CAPTURE))
     frames = []
-    for fn in (title_slide, problem_slide, routing_slide, evidence_slide, loop_slide, close_slide):
+    for fn in (title_slide, problem_slide, routing_slide, evidence_slide, tradeoff_slide, loop_slide, close_slide):
         frames += fn(cap)
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     wr = imageio_ffmpeg.write_frames(OUT, (W, H), fps=FPS, quality=8)

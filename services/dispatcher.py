@@ -586,24 +586,31 @@ def schedule_judging(request_id: str, enhanced_prompt: str, completion: str, age
 
 
 
-def viable_fallbacks(candidates: List[str], exclude: str, need_tools: bool,
+def viable_fallbacks(preferred: List[str], exclude: str, need_tools: bool,
                      est_tokens: Optional[int] = None) -> List[str]:
-    """Filter a fallback chain down to models that can actually do the job.
+    """Every model that could serve this request, preferred ones first.
 
-    The chains were hardcoded and only ever checked request size, so a model
-    marked unsuitable for tool calling was still reachable through failover.
-    That is how an agentic turn ended up on a 7B chat model that prints JSON
-    as text: the router had correctly excluded it, and failover put it back.
+    Two rules. A model the router excluded must not come back through
+    failover -- that is how an agentic turn once landed on a 7B chat model
+    that prints JSON as text. And the chain must not be a hardcoded list of
+    one provider's models: when that provider hit its daily cap, every request
+    failed while a funded provider sat unused, because nothing in the chain
+    pointed at it.
+
+    So the preferred names are tried first, then the rest of the routable
+    fleet, cheapest first.
     """
-    out = []
-    for c in candidates:
-        if c == exclude:
-            continue
-        if not is_model_routable(c, need_tools=need_tools):
-            continue
-        if est_tokens is not None and not model_can_accept(c, est_tokens):
-            continue
-        out.append(c)
+    def usable(model_id: str) -> bool:
+        if model_id == exclude:
+            return False
+        if not is_model_routable(model_id, need_tools=need_tools):
+            return False
+        return est_tokens is None or model_can_accept(model_id, est_tokens)
+
+    out = [c for c in preferred if usable(c)]
+    for m in sorted(settings.CANDIDATE_MODELS, key=lambda c: c.input_cost_per_1k):
+        if m.id not in out and usable(m.id):
+            out.append(m.id)
     return out
 
 

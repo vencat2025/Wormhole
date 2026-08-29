@@ -56,7 +56,10 @@ async def test_dispatch_and_judge_flow():
     )
     
     assert "request_id" in result
-    assert result["metrics"]["cost_savings_usd"] >= 0.0
+    # Assert on observed usage rather than a savings figure, which is priced
+    # against a model that never ran.
+    assert result["metrics"]["actual_cost_usd"] >= 0.0
+    assert result["metrics"]["total_tokens"] > 0
     
     # Run Judge evaluation
     req_id = result["request_id"]

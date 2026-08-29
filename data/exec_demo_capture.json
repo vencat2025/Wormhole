@@ -1,9 +1,9 @@
 {
-  "total_requests": 52,
-  "actual": 0.033487,
+  "total_requests": 95,
+  "actual": 0.05088,
   "baseline": 0.574084,
-  "ptok": 95553,
-  "ctok": 33520,
+  "ptok": 211418,
+  "ctok": 56687,
   "savings_pct": 94.2,
   "dist": [
     [

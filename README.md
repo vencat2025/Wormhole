@@ -293,18 +293,18 @@ better one.
 
 The dashboard reports cost savings. Be precise about what that is:
 
-- **Measured:** which model served each request, request counts, routing
-  decisions, and token counts — providers report real usage on every request,
-  including streamed ones
-- **Sourced:** per-token rates come from litellm's maintained pricing map, not
-  from hand-written numbers in this repo. Models it does not list (local Ollama)
-  fall back to `config.py`
-- **Constructed:** the savings figure prices the same tokens against GPT-4o
-  rates. It is a comparison against a model you did not run, not an observed bill
+The dashboard reports **only what actually happened**: which model served each
+request, how many requests there were, the tokens each used as reported by the
+provider, what that cost at litellm's published rates, and the share of traffic
+that stayed off the most expensive tier.
 
-Rows logged before this was fixed used a text-length heuristic for token counts
-that measured several times low, so historic totals understate real usage. Fresh
-traffic is measured.
+It deliberately does **not** show a "savings versus GPT-4o" figure. That number
+would price your tokens against a model that never ran, which is a projection
+dressed as a measurement and the first thing a sceptical reader would pull on.
+
+For a like-for-like comparison, run the benchmark below. It executes both a
+routed arm and a fixed-strong-model arm over the same tasks, so both sides of
+the comparison are real.
 
 Reproduce it on your own data:
 

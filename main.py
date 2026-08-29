@@ -247,9 +247,8 @@ async def chat_completions(
             "selected_model": result["selected_model"],
             "router_reasoning": router_reasoning,
             "actual_cost_usd": result["metrics"]["actual_cost_usd"],
-            "baseline_cost_usd": result["metrics"]["baseline_cost_usd"],
-            "cost_savings_usd": result["metrics"]["cost_savings_usd"],
-            "savings_percentage": f"{result['metrics']['savings_percentage']}%"
+            "prompt_tokens": result["metrics"]["prompt_tokens"],
+            "completion_tokens": result["metrics"]["completion_tokens"]
         }
     }
     
@@ -717,17 +716,29 @@ def list_logs(limit: int = 50, offset: int = 0):
         # Summary Analytics
         total_requests = session.exec(select(func.count(InferenceLog.id))).one()
         total_actual_cost = session.exec(select(func.sum(InferenceLog.actual_cost))).one() or 0.0
-        total_baseline_cost = session.exec(select(func.sum(InferenceLog.baseline_cost))).one() or 0.0
-        total_savings = session.exec(select(func.sum(InferenceLog.cost_savings))).one() or 0.0
+        total_in = session.exec(select(func.sum(InferenceLog.prompt_tokens))).one() or 0
+        total_out = session.exec(select(func.sum(InferenceLog.completion_tokens))).one() or 0
+
+        # Share of traffic that avoided the most expensive tier. Every part of
+        # this is observed: which model ran, and how many there were.
+        by_model = session.exec(
+            select(InferenceLog.selected_model, func.count(InferenceLog.id))
+            .group_by(InferenceLog.selected_model)
+        ).all()
+        heavy = {m.id for m in settings.CANDIDATE_MODELS if m.intelligence_tier == "frontier"}
+        off_heavy = sum(n for m, n in by_model if m not in heavy)
         avg_score = session.exec(select(func.avg(InferenceLog.judge_score))).one() or 0.0
 
         return {
             "summary": {
                 "total_requests": total_requests,
                 "total_actual_cost_usd": round(total_actual_cost, 4),
-                "total_baseline_cost_usd": round(total_baseline_cost, 4),
-                "total_savings_usd": round(total_savings, 4),
-                "savings_percentage": round((total_savings / max(total_baseline_cost, 0.0001)) * 100, 1),
+                "total_input_tokens": int(total_in),
+                "total_output_tokens": int(total_out),
+                "avg_cost_per_request": round(total_actual_cost / total_requests, 6) if total_requests else 0.0,
+                "requests_off_top_tier": off_heavy,
+                "off_top_tier_percentage": round(off_heavy / total_requests * 100, 1) if total_requests else 0.0,
+                "by_model": {m: n for m, n in by_model},
                 "average_judge_score": round(avg_score, 2)
             },
             "logs": logs
@@ -871,14 +882,14 @@ def get_dashboard():
             <div class="card-sub">Middleware Active</div>
         </div>
         <div class="card">
-            <div class="card-title">Total Cost Savings</div>
-            <div class="card-value" id="total-savings" style="color: var(--green);">$0.0000</div>
-            <div class="card-sub" id="savings-pct">0.0% Saved vs GPT-4o Baseline</div>
+            <div class="card-title">Kept off the top tier</div>
+            <div class="card-value" id="off-top" style="color: var(--green);">0%</div>
+            <div class="card-sub" id="off-top-sub">of requests</div>
         </div>
         <div class="card">
             <div class="card-title">Actual API Spend</div>
             <div class="card-value" id="actual-spend">$0.0000</div>
-            <div class="card-sub" id="baseline-spend">Baseline: $0.0000</div>
+            <div class="card-sub" id="avg-cost">Avg per request: $0.000000</div>
         </div>
         <div class="card">
             <div class="card-title">Avg Judge Score</div>
@@ -887,8 +898,14 @@ def get_dashboard():
         </div>
     </div>
 
+    <p style="color:var(--text-sub); font-size:13px; margin:-8px 0 20px 0;">
+        Every figure above is observed: which model ran, what it reported using, and what that cost.
+        For a like-for-like comparison against a single strong model, run
+        <code>scripts/evaluate_routing_quality.py</code> &mdash; it executes both arms for real.
+    </p>
+
     <div class="section-title">
-        <span>Inference Traffic & Routing Decisions</span>
+        <span>Inference Traffic &amp; Routing Decisions</span>
     </div>
 
     <table>
@@ -899,7 +916,7 @@ def get_dashboard():
                 <th>📥 Original Prompt</th>
                 <th>✨ Enhanced Prompt (Model 1 SLM)</th>
                 <th>🎯 Target Model & Reasoning</th>
-                <th>Cost / Savings</th>
+                <th>Tokens / Cost</th>
                 <th>Judge Score</th>
             </tr>
         </thead>
@@ -964,10 +981,12 @@ def get_dashboard():
                 const s = data.summary;
                 
                 document.getElementById('total-requests').innerText = s.total_requests;
-                document.getElementById('total-savings').innerText = `$${s.total_savings_usd.toFixed(4)}`;
-                document.getElementById('savings-pct').innerText = `${s.savings_percentage}% Saved vs Baseline`;
+                document.getElementById('off-top').innerText = `${s.off_top_tier_percentage}%`;
+                document.getElementById('off-top-sub').innerText =
+                    `${s.requests_off_top_tier} of ${s.total_requests} requests`;
                 document.getElementById('actual-spend').innerText = `$${s.total_actual_cost_usd.toFixed(4)}`;
-                document.getElementById('baseline-spend').innerText = `Baseline (GPT-4o): $${s.total_baseline_cost_usd.toFixed(4)}`;
+                document.getElementById('avg-cost').innerText =
+                    `Avg per request: $${s.avg_cost_per_request.toFixed(6)}  ·  ${s.total_input_tokens.toLocaleString()} in / ${s.total_output_tokens.toLocaleString()} out`;
                 document.getElementById('avg-score').innerText = `${s.average_judge_score} / 10`;
 
                 const tbody = document.getElementById('logs-body');
@@ -1002,7 +1021,7 @@ def get_dashboard():
                         </td>
                         <td>
                             <div style="font-weight: 600;">$${log.actual_cost.toFixed(6)}</div>
-                            <div style="font-size: 11px; color: var(--green);">Saved $${log.cost_savings.toFixed(6)}</div>
+                            <div style="font-size: 11px; color: var(--text-sub);">${log.prompt_tokens} in / ${log.completion_tokens} out</div>
                         </td>
                         <td>
                             ${log.judge_score !== null ? `<span class="tag tag-score">★ ${log.judge_score.toFixed(1)}/10</span>` : '<span style="color:var(--text-sub); font-size:11px;">Pending...</span>'}

@@ -86,7 +86,7 @@ def build(cap):
     hold(18)
     lines.append((f"    tokens   -> {cap['ptok']} in / {cap['ctok']} out  (provider-reported)", DIM))
     hold(18)
-    lines.append((f"    cost     -> ${cap['actual']:.6f}   vs ${cap['baseline']:.6f} at the GPT-4o baseline", DIM))
+    lines.append((f"    cost     -> ${cap['actual']:.6f}   (provider rates, tokens as reported)", DIM))
     hold(30)
 
     lines.append(("", FG))

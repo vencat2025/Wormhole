@@ -1,10 +1,10 @@
 """Render an executive-audience demo from a real capture.
 
 Reads data/exec_demo_capture.json, written by actual traffic through the
-gateway. Every number on screen traces to a logged request or a live routing
-call. Where a figure is an estimate rather than a measurement -- the token
-counts on streamed turns, the GPT-4o baseline -- the slide says so, because a
-number an executive repeats is one someone will later ask to see substantiated.
+gateway. Every number on screen traces to a logged request, a live routing call,
+or a benchmark run where both arms actually executed. Nothing is priced against
+a model that never ran, because a number an executive repeats is one someone
+will later ask to see substantiated.
 """
 
 import json
@@ -171,7 +171,7 @@ def evidence_slide(cap):
 
     panel(d, 565, 230, 470, 220, "SPEND ON MODELS USED")
     d.text((595, 290), f"${cap['actual']:.2f}", font=F_HUGE, fill=GREEN)
-    d.text((597, 400), f"vs ${cap['baseline']:.2f} at the GPT-4o baseline", font=F_SMALL, fill=MUTED)
+    d.text((597, 400), f"{cap['ptok']:,} input / {cap['ctok']:,} output tokens", font=F_SMALL, fill=MUTED)
 
     panel(d, 1070, 230, 470, 220, "TOP TIER RESERVED")
     d.text((1100, 290), f"{100 - cap['top_pct']:.0f}%", font=F_HUGE, fill=ACCENT)
@@ -179,13 +179,13 @@ def evidence_slide(cap):
 
     panel(d, 60, 480, 1480, 230, "HOW TO READ THESE")
     for i, t in enumerate([
-        "Model choices, request counts and token usage are measured: providers report real usage per request.",
+        "Which model ran, how many requests, and the tokens each used: all reported by the providers.",
         "Per-token rates come from litellm's maintained pricing map, not from numbers written in this repo.",
-        "The GPT-4o baseline is a counterfactual: the same tokens priced at flagship rates, not an observed bill.",
+        "Nothing here is a projection. The like-for-like comparison is on the next slide, where both arms actually ran.",
     ]):
         d.text((90, 545 + i * 42), t, font=F_SMALL, fill=MUTED)
-    caption(d, ["Every request is logged, so these are counts from real traffic rather than projections.",
-                "The panel below says which numbers are measured and which are a constructed comparison."])
+    caption(d, ["Every request is logged, so these are counts from traffic that actually ran.",
+                "No figure here is an estimate of what something else might have cost."])
     return hold(img, 13)
 
 

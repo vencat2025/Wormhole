@@ -1,14 +1,13 @@
 """Report what the gateway actually did, from logged requests.
 
-Every number here comes from rows in the inference log: which model served
-each request and how many tokens it used. Nothing is asserted or assumed.
+Every number here comes from rows in the inference log: which model served each
+request and how many tokens the provider reported it using.
 
-One caveat is stated wherever the output is used: the baseline is a
-counterfactual. WormHole cannot know what a request would have cost had it
-gone elsewhere, so it prices the *same measured token counts* against
-GPT-4o rates. Token counts are reported by the provider and rates come from
-litellm's maintained pricing map, so both sides are measured or sourced; what
-is constructed is the comparison against a model you did not actually run.
+There is deliberately no "savings versus a flagship model" figure. Producing
+one means pricing these tokens against a model that never saw them, which is a
+projection presented as a measurement. For a real comparison, run
+scripts/evaluate_routing_quality.py, which executes a routed arm and a
+fixed-strong-model arm over the same tasks so both sides actually happened.
 """
 
 import os
@@ -31,7 +30,6 @@ def main() -> int:
         return 1
 
     actual = sum(r.actual_cost or 0.0 for r in rows)
-    baseline = sum(r.baseline_cost or 0.0 for r in rows)
     in_tok = sum(r.prompt_tokens or 0 for r in rows)
     out_tok = sum(r.completion_tokens or 0 for r in rows)
     # 8.5 was written as a placeholder whenever the judge call failed, so it
@@ -45,12 +43,9 @@ def main() -> int:
     print(f"Sample size: {len(rows)} logged requests")
     print(f"Tokens: {in_tok:,} in / {out_tok:,} out")
     print()
-    print(f"Measured spend on models actually used: ${actual:.4f}")
-    print(f"Same tokens priced at the GPT-4o baseline: ${baseline:.4f}")
-    if baseline > 0:
-        print(f"Difference: ${baseline - actual:.4f} ({(baseline - actual) / baseline * 100:.1f}% lower)")
-    print("  (token counts are provider-reported; rates come from litellm's")
-    print("   pricing map. The baseline is a counterfactual, not an observed bill)")
+    print(f"Spend on the models that ran: ${actual:.4f}")
+    print(f"Average per request:          ${actual / len(rows):.6f}")
+    print("  (token counts are provider-reported; rates from litellm's pricing map)")
     print()
 
     dist = Counter(r.selected_model for r in rows)
@@ -68,6 +63,11 @@ def main() -> int:
         print("  pinned to a decommissioned model, and failures stored 8.5 rather")
         print("  than nothing. Judge failures now store no score, so a clean")
         print("  measurement needs traffic recorded after that fix.")
+
+    print()
+    print("For a like-for-like comparison against a single strong model, run:")
+    print("  python scripts/evaluate_routing_quality.py --n 24 --baseline <model>")
+    print("It runs both arms over the same tasks, so both sides are observed.")
     return 0
 
 

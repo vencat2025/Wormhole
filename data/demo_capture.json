@@ -1,10 +1,10 @@
 {
   "model": "groq/openai/gpt-oss-120b",
   "enhancer": "bypassed",
-  "judge": 10.0,
-  "ptok": 5147,
-  "ctok": 169,
-  "actual": 0.000873,
+  "judge": 2.0,
+  "ptok": 467,
+  "ctok": 101,
+  "actual": 0.000131,
   "baseline": 0.014558,
   "files": [
     "fib.py"

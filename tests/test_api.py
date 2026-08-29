@@ -27,7 +27,10 @@ def test_chat_completions_proxy():
     assert "choices" in data
     assert len(data["choices"]) > 0
     assert "wormhole_metadata" in data
-    assert "cost_savings_usd" in data["wormhole_metadata"]
+    # The response reports observed usage, not a savings figure priced against
+    # a model that never ran.
+    assert "actual_cost_usd" in data["wormhole_metadata"]
+    assert "prompt_tokens" in data["wormhole_metadata"]
 
 def test_analytics_logs():
     response = client.get("/api/logs")

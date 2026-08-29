@@ -9,3 +9,4 @@ data/exhausted_providers.json
 *.swp
 *.swo
 scratch/
+data/benchmark_cache/

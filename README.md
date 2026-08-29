@@ -222,9 +222,15 @@ A good score means the model that ran was adequate for that prompt, so it
 becomes a training label. A poor score relabels the prompt one tier up: the task
 needed more than it got. Unscored requests are ignored.
 
-Expect the router to improve as traffic accumulates, not immediately. It ships
-trained on synthetic benchmark prompts, which it matches well and generalises
-from poorly.
+The bootstrap set is built from real benchmark items — HumanEval, MBPP and
+GSM8K, fetched by `scripts/fetch_benchmark_prompts.py` and cached rather than
+committed — plus templates for the categories no public dataset covers
+(multi-file refactors, migrations, architecture, proof obligations).
+
+Expect the router to improve as your traffic accumulates. The bootstrap gives
+it real task phrasing, but its *labels* still come from published benchmark
+pass rates rather than from observing which model actually succeeded on each
+prompt. Your judged traffic is what replaces those approximations.
 
 ### Choosing the judge
 

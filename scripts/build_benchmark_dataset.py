@@ -258,6 +258,55 @@ def render_prompt(benchmark: str, difficulty: str, rng: random.Random) -> str:
     return f"{prefix}{body}"
 
 
+
+# Real benchmark items, downloaded and cached by fetch_benchmark_prompts.py.
+# These replace the synthetic templates for the benchmarks that publish their
+# data. The templates remain only for categories no public dataset covers:
+# multi-file refactors, migrations, architecture and proof obligations, which
+# is where SWE-bench-style difficulty actually lives and which HumanEval, MBPP
+# and GSM8K contain nothing like.
+REAL_PROMPT_BENCHMARKS = {"HumanEval": "HumanEval", "MBPP": "HumanEval", "GSM8K": "GSM8K"}
+
+
+def load_real_prompts() -> Dict[str, List[str]]:
+    """Real benchmark prompts keyed by the profile they should be scored under."""
+    try:
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        from fetch_benchmark_prompts import load_all
+    except Exception:
+        return {}
+
+    grouped: Dict[str, List[str]] = {}
+    for source, prompts in load_all().items():
+        profile = REAL_PROMPT_BENCHMARKS.get(source)
+        if not profile:
+            continue
+        for p in prompts:
+            text = " ".join(p.split())
+            # Skip the degenerate ends: a stub with no description teaches
+            # nothing, and a very long one is unrepresentative of a request.
+            if 25 <= len(text) <= 900:
+                grouped.setdefault(profile, []).append(text)
+    return grouped
+
+
+def difficulty_for(prompt: str) -> str:
+    """Rough tier for a real benchmark prompt.
+
+    Public coding and maths benchmarks do not label difficulty, so this reads
+    the signals that actually change which model is needed: an explicit proof
+    or complexity obligation, concurrency, or breadth across a system. It is a
+    heuristic, and it is why the judged feedback loop matters more than this
+    bootstrap.
+    """
+    low = prompt.lower()
+    hard_signals = ("prove", "proof", "complexity", "o(n", "concurren", "race condition",
+                    "distributed", "optimi", "architect", "migrat", "thread-safe")
+    if any(w in low for w in hard_signals):
+        return "hard"
+    return "medium" if len(prompt) > 180 else "easy"
+
+
 def fleet_costs() -> Dict[str, float]:
     """Input cost per model id, from the live fleet definition.
 
@@ -293,9 +342,20 @@ def build_dataset(num_samples: int = 2000, seed: int = 42) -> List[Dict[str, Any
     pairs = [(b, d) for b in TEMPLATES for d in ("easy", "medium", "hard")]
     dataset = []
 
+    real = load_real_prompts()
+    real_pool = [(bm, p) for bm, ps in real.items() for p in ps]
+    rng.shuffle(real_pool)
+    print(f"Real benchmark prompts available: {len(real_pool)}")
+
+    # Real items carry the coding and maths tiers. The templates still supply
+    # the hard categories no public dataset covers, so both are used.
     for i in range(num_samples):
-        benchmark, difficulty = pairs[i % len(pairs)]  # even coverage, not luck
-        prompt = render_prompt(benchmark, difficulty, rng)
+        if real_pool and i % 3 != 2:
+            benchmark, prompt = real_pool[i % len(real_pool)]
+            difficulty = difficulty_for(prompt)
+        else:
+            benchmark, difficulty = pairs[i % len(pairs)]
+            prompt = render_prompt(benchmark, difficulty, rng)
         opt = select_optimal_model(benchmark, difficulty, costs)
         dataset.append({
             "id": i + 1,

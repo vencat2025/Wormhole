@@ -55,6 +55,29 @@ F_H1, F_H2, F_BODY, F_SMALL = font(58), font(34), font(26), font(20)
 F_HUGE, F_MONO, F_MONO_S = font(88), mono(25), mono(20)
 
 
+
+F_CAP = font(24)
+
+
+def caption(d, lines):
+    """Narration at the foot of the frame.
+
+    The video is meant to stand on its own as well as play behind someone
+    talking, so each slide says in plain words what the reader is looking at.
+    """
+    if not lines:
+        return
+    top = H - 40 - 34 * len(lines)
+    d.rectangle([0, top - 26, W, H], fill=(8, 11, 19))
+    d.line([(0, top - 26), (W, top - 26)], fill=LINE, width=2)
+    for i, text in enumerate(lines):
+        d.text((60, top + i * 34), text, font=F_CAP, fill=(203, 213, 225))
+
+
+def hold(img, seconds):
+    return [img] * int(FPS * seconds)
+
+
 def base(subtitle=None):
     img = Image.new("RGB", (W, H), BG)
     d = ImageDraw.Draw(img)
@@ -77,7 +100,9 @@ def title_slide(cap):
     d.text((60, 370), "cheapest model that can do the job", font=F_H1, fill=ACCENT)
     d.text((62, 470), "A local routing layer for Codex and Claude Code.", font=F_BODY, fill=MUTED)
     d.text((62, 510), "Same tools your engineers already use. No workflow change.", font=F_BODY, fill=MUTED)
-    return [img] * 70
+    caption(d, ["A small local service sits between your coding tools and the model providers.",
+                "It picks a model per request, and stays out of the way otherwise."])
+    return hold(img, 6)
 
 
 def problem_slide(cap):
@@ -104,7 +129,9 @@ def problem_slide(cap):
         d.text((850, 320 + i * 52), t, font=F_MONO, fill=GREEN if i < 3 else WHITE)
     d.text((850, 560), "The heavyweight model is reserved", font=F_BODY, fill=GREEN)
     d.text((850, 598), "for work that actually needs it.", font=F_BODY, fill=GREEN)
-    return [img] * 110
+    caption(d, ["Today one model answers everything, so a variable rename costs the same as a migration.",
+                "Routing sends each task to the smallest model that can actually finish it."])
+    return hold(img, 11)
 
 
 def routing_slide(cap):
@@ -120,12 +147,17 @@ def routing_slide(cap):
             y = 320 + i * 72
             top = r["model"] == "gpt-5.5"
             d.text((90, y), f"[{r['label']}]", font=F_MONO_S, fill=AMBER if top else MUTED)
-            d.text((230, y), r["task"][:66], font=F_MONO_S, fill=WHITE)
+            task = r["task"]
+            # Keep clear of the model column; an overrun reads as a rendering bug.
+            task = task[:57] + "..." if len(task) > 60 else task
+            d.text((230, y), task, font=F_MONO_S, fill=WHITE)
             d.text((1050, y), r["model"], font=F_MONO, fill=AMBER if top else GREEN)
-        frames.extend([img] * (14 if shown else 6))
+        caption(d, ["Five real requests, routed live. The router reads the task and picks a tier.",
+                    "Only the last two, which involve concurrency and a correctness proof, reach the top tier."])
+        frames.extend([img] * (16 if shown else 8))
     img, d = frames[-1].copy(), None
     _, d = base("Live routing decisions")
-    frames.extend([frames[-1]] * 60)
+    frames.extend([frames[-1]] * int(FPS * 7))
     return frames
 
 
@@ -152,7 +184,9 @@ def evidence_slide(cap):
         "The GPT-4o baseline is a counterfactual: the same tokens priced at flagship rates, not an observed bill.",
     ]):
         d.text((90, 545 + i * 42), t, font=F_SMALL, fill=MUTED)
-    return [img] * 150
+    caption(d, ["Every request is logged, so these are counts from real traffic rather than projections.",
+                "The panel below says which numbers are measured and which are a constructed comparison."])
+    return hold(img, 13)
 
 
 def loop_slide(cap):
@@ -172,7 +206,9 @@ def loop_slide(cap):
     if q:
         d.text((90, 600), f"Quality is measured, not assumed: {q['n']} tasks scored by executing "
                           f"the benchmark's own tests.", font=F_BODY, fill=AMBER)
-    return [img] * 150
+    caption(d, ["Each answer is scored, and those scores become training data for the local router.",
+                "It starts on public benchmarks and gradually learns the work your team actually does."])
+    return hold(img, 13)
 
 
 
@@ -197,8 +233,11 @@ def tradeoff_slide(cap):
 
     d.text((60, 600), "Routing did not cost quality here. It beat always-use-the-flagship,", font=F_BODY, fill=WHITE)
     d.text((60, 640), "because a small modern model outperformed an older large one.", font=F_BODY, fill=MUTED)
-    d.text((60, 690), f"Correctness is the benchmark's own test suite executed over {q['n']} tasks, not a model's opinion.", font=F_SMALL, fill=MUTED)
-    return [img] * 170
+    d.text((60, 685), f"Correctness is the benchmark's own test suite executed over {q['n']} tasks, not a model's opinion.", font=F_SMALL, fill=MUTED)
+    caption(d, ["The honest question is not whether routing costs quality, but which models you allow.",
+                "Let it use a tiny free model and accuracy drops. Restrict it to stronger tiers and it beat",
+                "always-using-the-flagship, for a fraction of the cost."])
+    return hold(img, 16)
 
 
 def close_slide(cap):
@@ -207,7 +246,9 @@ def close_slide(cap):
     d.text((60, 370), "A policy about which model runs what.", font=F_H1, fill=ACCENT)
     d.text((62, 480), "Runs self-hosted. Works with Codex CLI and Claude Code.", font=F_BODY, fill=MUTED)
     d.text((62, 520), "Vendor-agnostic, or pinned to one vendor's tiers by policy.", font=F_BODY, fill=MUTED)
-    return [img] * 110
+    caption(d, ["Nothing changes for the engineers. What changes is which model quietly answers each request.",
+                "Self-hosted, open source, and every figure here reproducible with one command."])
+    return hold(img, 8)
 
 
 def main():

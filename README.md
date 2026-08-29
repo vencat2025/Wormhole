@@ -170,11 +170,23 @@ so the routing here is additive rather than duplicated.
 
 Verified against the free Groq tier:
 
-| Harness | Works on a free tier? | Why |
-|---|---|---|
-| **Codex CLI** | yes | ~5k tokens per turn after tool budgeting |
-| **OpenCode** | yes | small payload; created files and passing tests in testing |
-| **Claude Code** | no | ~9k tokens per turn against Groq's 8k/minute ceiling — needs a paid tier or a large local model |
+| Harness | Free tier (Groq/Ollama) | Paid provider | Note |
+|---|---|---|---|
+| **Codex CLI** | yes | yes | ~5k tokens per turn after tool budgeting |
+| **OpenCode** | yes | yes | small payload; created files and passing tests |
+| **Claude Code** | no | **yes** | ~30k tokens per turn. Exceeds Groq's 8k/minute free ceiling; fine on a provider without one |
+
+All three verified end to end, creating real files.
+
+One model-specific limit: `gpt-5.6-sol` rejects function tools on
+`/v1/chat/completions` ("use the Responses API"), so it is marked
+`supports_tools=False` and is not routed agentic work. It remains available for
+plain chat. `gpt-5-nano`, `gpt-5-mini`, `gpt-5.4`, `gpt-4o` and `gpt-4o-mini`
+all tool-call normally.
+
+Reasoning models also spend output budget before answering — `gpt-5-nano` used
+1,061 output tokens on a one-line task — so a low `max_tokens` can cut them off
+mid-thought and look like a refusal.
 
 ---
 

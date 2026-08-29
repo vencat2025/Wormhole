@@ -236,10 +236,16 @@ class Settings:
             provider="openai",
             input_cost_per_1k=0.00250,
             output_cost_per_1k=0.0200,
-            description="Flagship agentic coding model for architecture, proofs and high blast-radius changes.",
+            description="Flagship agentic coding model. Chat-completions tool calling is unsupported: see supports_tools.",
             speed_tier="medium",
             intelligence_tier="frontier",
-            pricing_verified=False
+            pricing_verified=False,
+            # OpenAI rejects function tools for this model on
+            # /v1/chat/completions with "Function tools with reasoning_effort
+            # are not supported ... use the Responses API". This gateway
+            # dispatches through chat completions, so an agentic turn routed
+            # here fails outright. It remains available for plain chat.
+            supports_tools=False
         ),
         CandidateModelConfig(
             id="gpt-4o",

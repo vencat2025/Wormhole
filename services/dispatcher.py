@@ -14,6 +14,13 @@ from db.models import InferenceLog
 
 logger = logging.getLogger("wormhole.dispatcher")
 
+# Providers reject parameters they do not implement rather than ignoring them,
+# and the fleet spans enough families that no single call signature suits all
+# of them. The gpt-5 series, for instance, refuses any temperature but 1, so a
+# hardcoded 0.7 failed every request routed there. Letting litellm drop what a
+# given model cannot accept keeps one call path working across the fleet.
+litellm.drop_params = True
+
 PROVIDER_FAILURE_COUNTS: Dict[str, int] = {}
 
 # Providers whose credentials were rejected this run. Populated from real
@@ -531,6 +538,28 @@ def schedule_judging(request_id: str, enhanced_prompt: str, completion: str, age
         logger.warning(f"Could not schedule judging for {request_id}: {err}")
 
 
+
+def viable_fallbacks(candidates: List[str], exclude: str, need_tools: bool,
+                     est_tokens: Optional[int] = None) -> List[str]:
+    """Filter a fallback chain down to models that can actually do the job.
+
+    The chains were hardcoded and only ever checked request size, so a model
+    marked unsuitable for tool calling was still reachable through failover.
+    That is how an agentic turn ended up on a 7B chat model that prints JSON
+    as text: the router had correctly excluded it, and failover put it back.
+    """
+    out = []
+    for c in candidates:
+        if c == exclude:
+            continue
+        if not is_model_routable(c, need_tools=need_tools):
+            continue
+        if est_tokens is not None and not model_can_accept(c, est_tokens):
+            continue
+        out.append(c)
+    return out
+
+
 async def dispatch_inference(
     original_prompt: str,
     enhanced_prompt: str,
@@ -599,12 +628,19 @@ async def dispatch_inference(
         record_provider_failure(active_model, e)
         logger.warning(f"Target model call failed for '{active_model}' ({e}). Attempting failover candidates.")
         
-        fallback_candidates = [
-            "groq/openai/gpt-oss-120b",
-            "groq/qwen/qwen3.6-27b",
-            # Local, so it has no shared account quota to exhaust.
-            "ollama/qwen2.5-coder:7b",
-        ]
+        # Filtered so failover cannot reinstate a model the router already
+        # excluded, such as one unfit for tool calling.
+        fallback_candidates = viable_fallbacks(
+            [
+                "groq/openai/gpt-oss-120b",
+                "groq/qwen/qwen3.6-27b",
+                # Local, so it has no shared account quota to exhaust.
+                "ollama/qwen2.5-coder:7b",
+            ],
+            exclude=active_model,
+            need_tools=bool(tools),
+            est_tokens=estimate_request_tokens(messages_to_send, tools),
+        )
         
         success = False
         for candidate in fallback_candidates:
@@ -1236,12 +1272,19 @@ async def dispatch_responses_streaming_inference(
         record_provider_failure(selected_model, e)
         logger.warning(f"Target model call failed for '{selected_model}' ({e}). Attempting failover candidates.")
         
-        fallback_candidates = [
-            "groq/openai/gpt-oss-120b",
-            "groq/qwen/qwen3.6-27b",
-            # Local, so it has no shared account quota to exhaust.
-            "ollama/qwen2.5-coder:7b",
-        ]
+        # Filtered so failover cannot reinstate a model the router already
+        # excluded, such as one unfit for tool calling.
+        fallback_candidates = viable_fallbacks(
+            [
+                "groq/openai/gpt-oss-120b",
+                "groq/qwen/qwen3.6-27b",
+                # Local, so it has no shared account quota to exhaust.
+                "ollama/qwen2.5-coder:7b",
+            ],
+            exclude=selected_model,
+            need_tools=bool(tools),
+            est_tokens=estimate_request_tokens(messages_to_send, tools),
+        )
         
         success = False
         for candidate in fallback_candidates:
@@ -1655,11 +1698,10 @@ async def dispatch_anthropic_streaming_inference(
         logger.warning(f"Anthropic streaming failed for '{selected_model}' ({e}). Attempting failover.")
 
         est = estimate_request_tokens(messages_to_send, tools)
-        candidates = [c for c in (
-            settings.AGENTIC_MODEL,
-            "groq/qwen/qwen3.6-27b",
-            "ollama/qwen2.5-coder:7b",
-        ) if c != selected_model and model_can_accept(c, est)]
+        candidates = viable_fallbacks(
+            [settings.AGENTIC_MODEL, "groq/qwen/qwen3.6-27b", "ollama/qwen2.5-coder:7b"],
+            exclude=selected_model, need_tools=bool(tools), est_tokens=est,
+        )
 
         recovered = False
         for candidate in candidates:

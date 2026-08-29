@@ -67,11 +67,14 @@
   "feedback": 30,
   "quality": {
     "n": 24,
-    "routed_pass": 14,
-    "baseline_pass": 18,
-    "routed_pct": 58.3,
-    "baseline_pct": 75.0,
-    "delta": "-16.7",
-    "cost_note": "$0.00000 routed vs $0.00093 baseline"
+    "routed_pass": 21,
+    "baseline_pass": 21,
+    "routed_pct": 95.5,
+    "baseline_pct": 87.5,
+    "delta": "+8.0",
+    "cost_note": "$0.0007 routed vs $0.0192 baseline",
+    "weak_routed_pct": 58.3,
+    "weak_baseline_pct": 83.3,
+    "weak_delta": "-25.0"
   }
 }

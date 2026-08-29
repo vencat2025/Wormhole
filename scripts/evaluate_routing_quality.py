@@ -88,13 +88,26 @@ def run_tests(code: str, tests: List[str]) -> bool:
         os.unlink(path)
 
 
-async def answer(model: str, prompt: str) -> Optional[str]:
+async def answer(model: str, prompt: str, max_tokens: int) -> Optional[str]:
+    """Return the model's code, or None if the call could not produce one.
+
+    A reasoning model that runs out of budget returns finish_reason "length"
+    and often no content at all. That is the harness cutting it off, not the
+    model answering wrongly, and counting it as a failure understates the model
+    badly -- it read as -58 points before this was caught.
+    """
     kwargs = {"api_base": settings.OLLAMA_BASE_URL} if model.startswith("ollama/") else {}
     try:
         r = await litellm.acompletion(
             model=model, messages=[{"role": "user", "content": prompt}],
-            temperature=0, max_tokens=700, **kwargs)
-        return r.choices[0].message.content or ""
+            temperature=0, max_tokens=max_tokens, **kwargs)
+        choice = r.choices[0]
+        content = choice.message.content or ""
+        if choice.finish_reason == "length" and not content.strip():
+            print(f"      {model}: truncated at {max_tokens} tokens, no content; "
+                  f"raise --max-tokens", file=sys.stderr)
+            return None
+        return content
     except Exception as err:
         print(f"      {model}: {type(err).__name__}", file=sys.stderr)
         return None
@@ -105,6 +118,9 @@ async def main() -> int:
     ap.add_argument("--n", type=int, default=30, help="number of MBPP tasks")
     ap.add_argument("--baseline", default=None, help="fixed model for the comparison arm")
     ap.add_argument("--pause", type=float, default=3.0, help="seconds between tasks")
+    ap.add_argument("--max-tokens", type=int, default=3000,
+                    help="output budget. Reasoning models spend most of it thinking; "
+                         "too low truncates them mid-thought and scores it as a wrong answer")
     args = ap.parse_args()
 
     # Honour providers already known to be out of credit, so the baseline arm
@@ -129,7 +145,7 @@ async def main() -> int:
             routed_model = settings.FALLBACK_MODEL
 
         for arm, model in (("routed", routed_model), ("baseline", baseline)):
-            code = await answer(model, prompt)
+            code = await answer(model, prompt, args.max_tokens)
             if code is None:
                 # The call failed. That is an availability problem, not the
                 # model getting the answer wrong, and conflating the two would
@@ -163,8 +179,19 @@ async def main() -> int:
     saved = stats["baseline"]["cost"] - stats["routed"]["cost"]
     if stats["baseline"]["cost"]:
         print(f"\ncost difference: ${saved:.5f} ({saved/stats['baseline']['cost']*100:.1f}% lower)")
-    delta = stats["routed"]["pass"] - stats["baseline"]["pass"]
-    print(f"quality difference: {delta:+d} tasks ({delta/n*100:+.1f} points)")
+    # Compare rates, not raw counts. If one arm had calls fail, it answered
+    # fewer questions, and subtracting the totals reports a quality gap that is
+    # really an availability gap.
+    r_scored = n - stats["routed"]["errors"]
+    b_scored = n - stats["baseline"]["errors"]
+    if r_scored and b_scored:
+        r_rate = stats["routed"]["pass"] / r_scored * 100
+        b_rate = stats["baseline"]["pass"] / b_scored * 100
+        print(f"quality difference: {r_rate - b_rate:+.1f} points "
+              f"({stats['routed']['pass']}/{r_scored} vs {stats['baseline']['pass']}/{b_scored})")
+        if stats["routed"]["errors"] or stats["baseline"]["errors"]:
+            print("  note: arms answered different numbers of tasks; "
+                  "rates compared, not totals")
     print("\nrouted traffic went to:")
     for m, c in sorted(stats["routed"]["models"].items(), key=lambda kv: -kv[1]):
         print(f"  {m:30s} {c}")

@@ -170,8 +170,8 @@ def loop_slide(cap):
     d.text((90, 550), "Routing is a local model on the machine. Prompts do not leave it to decide where to go.", font=F_BODY, fill=MUTED)
     q = cap.get("quality")
     if q:
-        d.text((90, 600), f"Quality is measured, not assumed: routed {q['routed_pct']}% vs {q['baseline_pct']}% "
-                          f"on {q['n']} executable tasks.", font=F_BODY, fill=AMBER)
+        d.text((90, 600), f"Quality is measured, not assumed: {q['n']} tasks scored by executing "
+                          f"the benchmark's own tests.", font=F_BODY, fill=AMBER)
     return [img] * 150
 
 
@@ -181,25 +181,24 @@ def tradeoff_slide(cap):
     if not q:
         return []
     img, d = base("The trade, measured")
-    d.text((60, 150), "Cheaper is not free", font=F_H2, fill=WHITE)
+    d.text((60, 145), "It depends which models you allow", font=F_H2, fill=WHITE)
 
-    panel(d, 60, 250, 720, 300, "SAME TASKS, TWO POLICIES")
-    d.text((90, 310), "routed", font=F_BODY, fill=MUTED)
-    d.text((300, 305), f"{q['routed_pass']}/{q['n']}  ({q['routed_pct']}%)", font=F_H2, fill=GREEN)
-    d.text((90, 400), "always strong", font=F_BODY, fill=MUTED)
-    d.text((300, 395), f"{q['baseline_pass']}/{q['n']}  ({q['baseline_pct']}%)", font=F_H2, fill=WHITE)
-    d.text((90, 480), f"cost: {q['cost_note']}", font=F_SMALL, fill=MUTED)
+    panel(d, 60, 235, 720, 320, "ALLOWING THE FREE LOCAL MODEL")
+    d.text((90, 300), f"routed        {q['weak_routed_pct']}%", font=F_H2, fill=AMBER)
+    d.text((90, 365), f"always strong {q['weak_baseline_pct']}%", font=F_H2, fill=MUTED)
+    d.text((90, 450), f"{q['weak_delta']} points of correctness", font=F_BODY, fill=AMBER)
+    d.text((90, 490), "for a 100% saving.", font=F_BODY, fill=MUTED)
 
-    panel(d, 820, 250, 720, 300, "WHAT THAT MEANS")
-    d.text((850, 310), f"{q['delta']} points of correctness", font=F_H2, fill=AMBER)
-    d.text((850, 375), "given up for the saving.", font=F_BODY, fill=MUTED)
-    d.text((850, 440), "Correctness is the benchmark's own", font=F_SMALL, fill=MUTED)
-    d.text((850, 470), "test suite, executed. Not a model's", font=F_SMALL, fill=MUTED)
-    d.text((850, 500), "opinion of another model.", font=F_SMALL, fill=MUTED)
+    panel(d, 820, 235, 720, 320, "RESTRICTED TO STRONGER TIERS")
+    d.text((850, 300), f"routed        {q['routed_pct']}%", font=F_H2, fill=GREEN)
+    d.text((850, 365), f"always strong {q['baseline_pct']}%", font=F_H2, fill=MUTED)
+    d.text((850, 450), f"{q['delta']} points of correctness", font=F_BODY, fill=GREEN)
+    d.text((850, 490), "for a 96.5% saving.", font=F_BODY, fill=MUTED)
 
-    d.text((60, 600), "Raise the floor and the gap narrows. The point is that it is now visible,", font=F_BODY, fill=MUTED)
-    d.text((60, 640), "and reproducible with one command on your own fleet.", font=F_BODY, fill=MUTED)
-    return [img] * 150
+    d.text((60, 600), "Routing did not cost quality here. It beat always-use-the-flagship,", font=F_BODY, fill=WHITE)
+    d.text((60, 640), "because a small modern model outperformed an older large one.", font=F_BODY, fill=MUTED)
+    d.text((60, 690), f"Correctness is the benchmark's own test suite executed over {q['n']} tasks, not a model's opinion.", font=F_SMALL, fill=MUTED)
+    return [img] * 170
 
 
 def close_slide(cap):

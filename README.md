@@ -314,30 +314,36 @@ python scripts/measure_savings.py
 
 ### Does routing cost you quality?
 
-There is now a way to find out, and the answer on the default configuration is
-**yes, measurably**. `scripts/evaluate_routing_quality.py` runs MBPP problems
+You can measure it. `scripts/evaluate_routing_quality.py` runs MBPP problems
 through the router and through a fixed strong model, then executes both answers
 against MBPP's own assertions — correctness is the test suite passing, not a
 model's opinion.
 
 ```bash
-python scripts/evaluate_routing_quality.py --n 24 --baseline groq/openai/gpt-oss-120b
+python scripts/evaluate_routing_quality.py --n 24 --baseline gpt-4o
 ```
 
-Over 24 tasks:
+**The answer depends entirely on which models you let it pick.** Same 24 tasks,
+same baseline:
 
-| arm | pass rate | cost |
-|---|---|---|
-| routed | 14/24 (58.3%) | $0.00000 |
-| baseline (`gpt-oss-120b`) | 18/24 (75.0%) | $0.00093 |
+| Fleet the router could choose from | Routed | Baseline `gpt-4o` | Quality | Cost |
+|---|---|---|---|---|
+| Default, including the free local 7B | 14/24 (58.3%) | 20/24 (83.3%) | **−25.0 pts** | 100% lower |
+| OpenAI tiers only (`gpt-5-nano` … `gpt-4o`) | 21/22 (95.5%) | 21/24 (87.5%) | **+8.0 pts** | 96.5% lower |
 
-**100% cheaper, 16.7 points worse.** The router sent every task to the free
-local 7B model, which is genuinely less capable. That is the trade being made,
-and it was invisible before this existed.
+Routing to the free local model costs real accuracy. Routing within OpenAI's
+own tiers was *better* than always using `gpt-4o`, at a fraction of the cost —
+the small modern model beat the older flagship on this benchmark.
 
-Run it on your own fleet before trusting routing with work that matters. If the
-quality gap is unacceptable, raise the floor — `ROUTING_MODELS` to exclude the
-weakest tier, or `ENHANCE_TIERS` to lift what the cheap models receive.
+So the useful question is not "does routing hurt quality" but "which floor do
+you set". Use `ROUTING_MODELS` to set it, and re-run the benchmark to see what
+that choice costs or buys on your own fleet.
+
+**Give reasoning models room.** They spend most of their output budget thinking
+before answering. `--max-tokens` defaults to 3000 for that reason: at 700,
+`gpt-5-nano` returned `finish_reason=length` with no content at all, and an
+earlier run of this benchmark scored that as failure and reported −58 points.
+The harness now flags truncation instead of counting it as a wrong answer.
 
 The LLM-as-judge score in the dashboard is a different thing: one model grading
 another, with no ground truth. Treat it as a hint. This benchmark is the

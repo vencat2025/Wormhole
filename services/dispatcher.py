@@ -358,10 +358,32 @@ def get_model_config(model_id: str) -> CandidateModelConfig:
         intelligence_tier="medium"
     )
 
+def provider_rates_per_1k(model_id: str) -> Optional[tuple]:
+    """Published rates from litellm's maintained pricing map, if it has them.
+
+    Hand-maintained prices go stale silently and nothing catches it. Checking
+    the fleet against this map found four wrong entries, two of them
+    understating cost by 4x and 6x, which flows straight into every figure the
+    dashboard reports.
+    """
+    candidates = (model_id, model_id.split("/", 1)[-1], model_id.replace("groq/", ""))
+    for key in candidates:
+        entry = litellm.model_cost.get(key)
+        if entry and entry.get("input_cost_per_token") is not None:
+            return (entry["input_cost_per_token"] * 1000,
+                    (entry.get("output_cost_per_token") or 0.0) * 1000)
+    return None
+
+
 def calculate_cost(model_id: str, prompt_tokens: int, completion_tokens: int) -> float:
-    config = get_model_config(model_id)
-    input_cost = (prompt_tokens / 1000.0) * config.input_cost_per_1k
-    output_cost = (completion_tokens / 1000.0) * config.output_cost_per_1k
+    rates = provider_rates_per_1k(model_id)
+    if rates is None:
+        # Not in the map: local models, and anything custom. Fall back to the
+        # rate declared in config.py.
+        config = get_model_config(model_id)
+        rates = (config.input_cost_per_1k, config.output_cost_per_1k)
+    input_cost = (prompt_tokens / 1000.0) * rates[0]
+    output_cost = (completion_tokens / 1000.0) * rates[1]
     return round(input_cost + output_cost, 6)
 
 def record_provider_success(model_id: str):
@@ -506,6 +528,31 @@ def describe_tool_calls(calls: List[Dict[str, Any]]) -> str:
             args = args[:1200] + "...(truncated)"
         lines.append(f"- {name}({args})")
     return "\n".join(lines)
+
+
+
+def usage_from_chunk(chunk) -> Optional[tuple]:
+    """Return (prompt_tokens, completion_tokens) if this chunk carries usage."""
+    u = getattr(chunk, "usage", None)
+    if not u:
+        return None
+    p = getattr(u, "prompt_tokens", None)
+    c = getattr(u, "completion_tokens", None)
+    if p is None and c is None:
+        return None
+    return (p or 0, c or 0)
+
+
+def usage_or_estimate(reported: Optional[tuple], enhanced_prompt: str, completion: str) -> tuple:
+    """Prefer provider-reported tokens; fall back to the length heuristic.
+
+    The heuristic is kept only for providers that do not report usage. It is
+    approximate and understates real usage, so anything derived from it is an
+    estimate rather than a measurement.
+    """
+    if reported:
+        return reported
+    return (len(enhanced_prompt) // 4, len(completion) // 4)
 
 
 def schedule_judging(request_id: str, enhanced_prompt: str, completion: str, agentic: bool = False) -> None:
@@ -773,6 +820,7 @@ async def dispatch_streaming_inference(
     yield f"data: {json.dumps(role_chunk)}\n\n"
 
     full_completion = ""
+    reported_usage = None
     has_native_tool_calls = False
     try:
         extra_kwargs = {}
@@ -790,9 +838,14 @@ async def dispatch_streaming_inference(
             messages=messages_to_send,
             temperature=0.7,
             stream=True,
+            # Providers report real token counts in a final chunk when asked.
+            # Without this the log falls back to a length heuristic that
+            # measured 4x low against actual usage.
+            stream_options={"include_usage": True},
             **extra_kwargs
         )
         async for chunk in response_stream:
+            reported_usage = usage_from_chunk(chunk) or reported_usage
             if chunk.choices and len(chunk.choices) > 0:
                 choice = chunk.choices[0]
                 delta_obj = choice.delta
@@ -959,8 +1012,7 @@ async def dispatch_streaming_inference(
     yield f"data: {json.dumps(final_chunk)}\n\n"
     yield "data: [DONE]\n\n"
 
-    prompt_tokens = len(enhanced_prompt) // 4
-    completion_tokens = len(full_completion) // 4
+    prompt_tokens, completion_tokens = usage_or_estimate(reported_usage, enhanced_prompt, full_completion)
     total_tokens = prompt_tokens + completion_tokens
     actual_cost = calculate_cost(selected_model, prompt_tokens, completion_tokens)
     baseline_cost = calculate_cost("gpt-4o", prompt_tokens, completion_tokens)
@@ -1069,6 +1121,7 @@ async def dispatch_responses_streaming_inference(
         messages_to_send = prune_messages_for_token_limit(messages_to_send)
 
     full_completion = ""
+    reported_usage = None
     active_fn_calls = {}
     streamed_text = False
     try:
@@ -1087,9 +1140,14 @@ async def dispatch_responses_streaming_inference(
             messages=messages_to_send,
             temperature=0.7,
             stream=True,
+            # Providers report real token counts in a final chunk when asked.
+            # Without this the log falls back to a length heuristic that
+            # measured 4x low against actual usage.
+            stream_options={"include_usage": True},
             **extra_kwargs
         )
         async for chunk in response_stream:
+            reported_usage = usage_from_chunk(chunk) or reported_usage
             if chunk.choices and len(chunk.choices) > 0:
                 delta_obj = chunk.choices[0].delta
                 
@@ -1311,9 +1369,14 @@ async def dispatch_responses_streaming_inference(
                     messages=cand_messages,
                     temperature=0.7,
                     stream=True,
+            # Providers report real token counts in a final chunk when asked.
+            # Without this the log falls back to a length heuristic that
+            # measured 4x low against actual usage.
+            stream_options={"include_usage": True},
                     **cand_kwargs
                 )
                 async for chunk in fallback_stream:
+                    reported_usage = usage_from_chunk(chunk) or reported_usage
                     if chunk.choices and len(chunk.choices) > 0:
                         delta_obj = chunk.choices[0].delta
                         delta_content = getattr(delta_obj, "content", "") or ""
@@ -1521,8 +1584,7 @@ async def dispatch_responses_streaming_inference(
     yield "data: [DONE]\n\n"
 
     # Log metrics to DB
-    prompt_tokens = len(enhanced_prompt) // 4
-    completion_tokens = len(full_completion) // 4
+    prompt_tokens, completion_tokens = usage_or_estimate(reported_usage, enhanced_prompt, full_completion)
     total_tokens = prompt_tokens + completion_tokens
     actual_cost = calculate_cost(selected_model, prompt_tokens, completion_tokens)
     baseline_cost = calculate_cost("gpt-4o", prompt_tokens, completion_tokens)
@@ -1617,6 +1679,7 @@ async def dispatch_anthropic_streaming_inference(
     block_index = 0
     text_block_open = False
     full_completion = ""
+    reported_usage = None
     active_tools: Dict[int, Dict[str, Any]] = {}
     stop_reason = "end_turn"
 
@@ -1642,10 +1705,15 @@ async def dispatch_anthropic_streaming_inference(
             messages=messages_to_send,
             temperature=0.7,
             stream=True,
+            # Providers report real token counts in a final chunk when asked.
+            # Without this the log falls back to a length heuristic that
+            # measured 4x low against actual usage.
+            stream_options={"include_usage": True},
             **extra_kwargs
         )
 
         async for chunk in stream:
+            reported_usage = usage_from_chunk(chunk) or reported_usage
             if not chunk.choices:
                 continue
             delta = chunk.choices[0].delta
@@ -1792,6 +1860,7 @@ async def dispatch_anthropic_streaming_inference(
         selected_model=selected_model,
         router_reasoning=router_reasoning + " | Anthropic Messages Streamed",
         completion=full_completion,
+        reported_usage=reported_usage,
     )
     tool_summary = describe_tool_calls([
         {"name": meta["name"], "arguments": ""} for meta in active_tools.values()
@@ -1801,9 +1870,9 @@ async def dispatch_anthropic_streaming_inference(
 
 
 def _log_inference(request_id, original_prompt, enhanced_prompt, enhancer_model,
-                   router_model, selected_model, router_reasoning, completion):
-    prompt_tokens = len(enhanced_prompt) // 4
-    completion_tokens = len(completion) // 4
+                   router_model, selected_model, router_reasoning, completion,
+                   reported_usage=None):
+    prompt_tokens, completion_tokens = usage_or_estimate(reported_usage, enhanced_prompt, completion)
     actual_cost = calculate_cost(selected_model, prompt_tokens, completion_tokens)
     baseline_cost = calculate_cost("gpt-4o", prompt_tokens, completion_tokens)
     try:

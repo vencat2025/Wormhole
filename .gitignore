@@ -8,3 +8,4 @@ wormhole.db
 data/exhausted_providers.json
 *.swp
 *.swo
+scratch/

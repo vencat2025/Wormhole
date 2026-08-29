@@ -290,8 +290,36 @@ Reproduce it on your own data:
 python scripts/measure_savings.py
 ```
 
-**Quality is not benchmarked.** The only quality signal is one model grading
-another. Treat it as a hint, not a measurement.
+### Does routing cost you quality?
+
+There is now a way to find out, and the answer on the default configuration is
+**yes, measurably**. `scripts/evaluate_routing_quality.py` runs MBPP problems
+through the router and through a fixed strong model, then executes both answers
+against MBPP's own assertions — correctness is the test suite passing, not a
+model's opinion.
+
+```bash
+python scripts/evaluate_routing_quality.py --n 24 --baseline groq/openai/gpt-oss-120b
+```
+
+Over 24 tasks:
+
+| arm | pass rate | cost |
+|---|---|---|
+| routed | 14/24 (58.3%) | $0.00000 |
+| baseline (`gpt-oss-120b`) | 18/24 (75.0%) | $0.00093 |
+
+**100% cheaper, 16.7 points worse.** The router sent every task to the free
+local 7B model, which is genuinely less capable. That is the trade being made,
+and it was invisible before this existed.
+
+Run it on your own fleet before trusting routing with work that matters. If the
+quality gap is unacceptable, raise the floor — `ROUTING_MODELS` to exclude the
+weakest tier, or `ENHANCE_TIERS` to lift what the cheap models receive.
+
+The LLM-as-judge score in the dashboard is a different thing: one model grading
+another, with no ground truth. Treat it as a hint. This benchmark is the
+measurement.
 
 ---
 

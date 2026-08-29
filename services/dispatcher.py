@@ -71,19 +71,64 @@ def _persist_exhausted_provider(provider: str) -> None:
     except OSError as err:
         logger.warning(f"Could not persist exhausted provider {provider}: {err}")
 
-# Providers report how long to wait when a per-minute token budget is hit.
-_RETRY_AFTER_RE = re.compile(r"try again in ([0-9.]+)\s*s", re.IGNORECASE)
+# Providers report how long to wait when a token budget is hit. The interval
+# comes in mixed units: "26.85s", "11m3.12s", occasionally "1h2m".
+_RETRY_AFTER_RE = re.compile(
+    r"try again in\s*(?:([0-9.]+)h)?\s*(?:([0-9.]+)m(?![s]))?\s*(?:([0-9.]+)\s*m?s)?",
+    re.IGNORECASE,
+)
 MAX_RATE_LIMIT_WAIT_SECONDS = 45.0
+
+# model id -> epoch seconds at which it becomes worth trying again.
+MODEL_COOLDOWN: Dict[str, float] = {}
 
 
 def _retry_after_seconds(err: Exception) -> Optional[float]:
-    match = _RETRY_AFTER_RE.search(str(err))
-    if not match:
+    """Seconds until the provider says this model will accept traffic again.
+
+    Parsing only "([0-9.]+)s" missed "11m3.12s", which is how a daily cap is
+    reported. A daily cap therefore looked like an unparseable error, the model
+    was never marked unavailable, and the router kept selecting it first on
+    every request for the rest of the day.
+    """
+    text = str(err)
+    m = _RETRY_AFTER_RE.search(text)
+    if not m or not any(m.groups()):
         return None
-    try:
-        return float(match.group(1))
-    except ValueError:
-        return None
+    hours, minutes, seconds = (float(g) if g else 0.0 for g in m.groups())
+    # "7.5ms" would otherwise read as 7.5 seconds and make backoff sleep for
+    # eight seconds where the provider asked for eight milliseconds.
+    if seconds and re.search(rf"{re.escape(m.group(3) or '')}\s*ms", text, re.IGNORECASE):
+        seconds /= 1000.0
+    total = hours * 3600 + minutes * 60 + seconds
+    return total or None
+
+
+def mark_unavailable(model_id: str, seconds: float, reason: str = "") -> None:
+    """Take a model out of routing until its limit window passes.
+
+    Failing over per request still costs a failed call each time, and the
+    router keeps choosing the same exhausted model. Recording when it will be
+    usable again means routing simply stops selecting it, so the client never
+    sees the limit at all.
+    """
+    until = time.time() + max(1.0, seconds)
+    if until > MODEL_COOLDOWN.get(model_id, 0.0):
+        MODEL_COOLDOWN[model_id] = until
+        logger.info(
+            f"'{model_id}' unavailable for {seconds:.0f}s{f' ({reason})' if reason else ''}; "
+            f"routing will skip it until then."
+        )
+
+
+def in_cooldown(model_id: str) -> bool:
+    until = MODEL_COOLDOWN.get(model_id)
+    if until is None:
+        return False
+    if time.time() >= until:
+        del MODEL_COOLDOWN[model_id]
+        return False
+    return True
 
 
 async def acompletion_with_backoff(attempts: int = 3, **kwargs):
@@ -395,6 +440,14 @@ def record_provider_success(model_id: str):
 def record_provider_failure(model_id: str, error: Optional[Exception] = None):
     PROVIDER_FAILURE_COUNTS[model_id] = PROVIDER_FAILURE_COUNTS.get(model_id, 0) + 1
 
+    # A stated retry interval is the provider telling us exactly how long this
+    # model is unusable. Honour it so routing stops choosing it, rather than
+    # rediscovering the same limit on every subsequent request.
+    if error is not None:
+        wait = _retry_after_seconds(error)
+        if wait and wait > MAX_RATE_LIMIT_WAIT_SECONDS:
+            mark_unavailable(model_id, wait, "provider rate limit")
+
     # A rejected key or an exhausted balance is a property of the provider,
     # not of one model, and no number of retries will fix either. Marking the
     # provider dead takes its whole fleet out of routing on the first failure
@@ -463,6 +516,8 @@ def is_model_routable(model_id: str, need_tools: bool = False) -> bool:
     if cfg.provider in UNAUTHENTICATED_PROVIDERS:
         return False
     if need_tools and not cfg.supports_tools:
+        return False
+    if in_cooldown(model_id):
         return False
     return not is_circuit_open(model_id)
 

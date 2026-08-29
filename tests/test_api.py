@@ -1,7 +1,17 @@
 import pytest
 from fastapi.testclient import TestClient
 from db.database import init_db
+from services import dispatcher as _dispatcher
 from main import app
+
+
+@pytest.fixture(autouse=True)
+def _reset_availability():
+    """Cooldowns and circuit state are process-global; keep tests independent."""
+    _dispatcher.MODEL_COOLDOWN.clear()
+    _dispatcher.PROVIDER_FAILURE_COUNTS.clear()
+    _dispatcher.UNAUTHENTICATED_PROVIDERS.clear()
+
 
 init_db()
 client = TestClient(app)

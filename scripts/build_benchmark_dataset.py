@@ -307,6 +307,68 @@ def difficulty_for(prompt: str) -> str:
     return "medium" if len(prompt) > 180 else "easy"
 
 
+
+
+# Capability order, cheapest-capable first. Used to turn a measured solve rate
+# directly into a tier.
+TIER_ORDER = ["basic", "medium", "high", "frontier"]
+
+
+def label_from_solve_rate(rate: float, costs: Dict[str, float]) -> str:
+    """Pick a tier straight from how often real systems solved the task.
+
+    Routing a measured solve rate through a benchmark's published average
+    throws the measurement away: SWE-bench pass rates sit in a narrow band, so
+    its easy and medium tiers collapse onto the same model and every task looks
+    equally hard. The observed rate is the better signal, so it selects the
+    tier itself.
+    """
+    if rate >= 0.75:
+        wanted = "basic"       # nearly everything solved it
+    elif rate >= 0.45:
+        wanted = "medium"
+    elif rate >= 0.20:
+        wanted = "high"
+    else:
+        wanted = "frontier"    # almost nothing solved it
+
+    start = TIER_ORDER.index(wanted)
+    for tier in TIER_ORDER[start:]:
+        eligible = [m for m in settings.CANDIDATE_MODELS
+                    if m.intelligence_tier == tier and m.id in costs]
+        if eligible:
+            return min(eligible, key=lambda m: costs[m.id]).id
+    return min(costs, key=costs.get)
+
+
+def load_measured_difficulty() -> List[Dict[str, Any]]:
+    """Real coding tasks whose difficulty was measured, not guessed.
+
+    Each row is a SWE-bench Verified instance plus the fraction of ~134
+    published systems that actually resolved it, which those systems
+    established by running the projects' own test suites. A task few systems
+    resolved is hard; one most resolved is not.
+
+    Everywhere else in this file difficulty is inferred from wording. Here it
+    is an observed property of the task, which is the difference between the
+    router learning what hard problems look like and learning which words tend
+    to appear in them.
+    """
+    path = os.path.join(DATA_DIR, "benchmark_cache", "swebench_difficulty.json")
+    if not os.path.exists(path):
+        return []
+    rows = json.load(open(path))
+    out = []
+    for r in rows:
+        rate = r["solve_rate"]
+        tier = "hard" if rate < 0.20 else "medium" if rate < 0.60 else "easy"
+        text = r["prompt"].strip()
+        if 40 <= len(text) <= 1500:
+            out.append({"prompt": text, "difficulty": tier, "benchmark": "SWE-bench",
+                        "solve_rate": rate})
+    return out
+
+
 def fleet_costs() -> Dict[str, float]:
     """Input cost per model id, from the live fleet definition.
 
@@ -345,12 +407,29 @@ def build_dataset(num_samples: int = 2000, seed: int = 42) -> List[Dict[str, Any
     real = load_real_prompts()
     real_pool = [(bm, p) for bm, ps in real.items() for p in ps]
     rng.shuffle(real_pool)
+
+    measured = load_measured_difficulty()
+    rng.shuffle(measured)
     print(f"Real benchmark prompts available: {len(real_pool)}")
+    print(f"Tasks with measured difficulty:   {len(measured)}")
 
     # Real items carry the coding and maths tiers. The templates still supply
     # the hard categories no public dataset covers, so both are used.
     for i in range(num_samples):
-        if real_pool and i % 3 != 2:
+        if measured and i % 3 == 0:
+            # Measured difficulty takes priority: these are the only rows whose
+            # tier was observed rather than inferred, and the observed rate
+            # picks the label directly.
+            m = measured[i % len(measured)]
+            dataset.append({
+                "id": i + 1, "benchmark": m["benchmark"], "difficulty": m["difficulty"],
+                "prompt": m["prompt"],
+                "selected_model": label_from_solve_rate(m["solve_rate"], costs),
+                "expected_pass_rate": m["solve_rate"],
+                "input_cost_per_1k": costs.get(label_from_solve_rate(m["solve_rate"], costs), 0.0),
+            })
+            continue
+        elif real_pool and i % 3 == 1:
             benchmark, prompt = real_pool[i % len(real_pool)]
             difficulty = difficulty_for(prompt)
         else:

@@ -179,19 +179,22 @@ async def main() -> int:
     saved = stats["baseline"]["cost"] - stats["routed"]["cost"]
     if stats["baseline"]["cost"]:
         print(f"\ncost difference: ${saved:.5f} ({saved/stats['baseline']['cost']*100:.1f}% lower)")
-    # Compare rates, not raw counts. If one arm had calls fail, it answered
-    # fewer questions, and subtracting the totals reports a quality gap that is
-    # really an availability gap.
+    # Lead with tasks solved out of tasks given. Excluding an arm's failed calls
+    # from its denominator flatters it: an arm that errored twice and solved the
+    # same number of tasks scores several points "higher" purely because it was
+    # asked fewer questions. Report the like-for-like figure first and the
+    # error-adjusted one second, clearly labelled.
+    r_pass, b_pass = stats["routed"]["pass"], stats["baseline"]["pass"]
+    print(f"tasks solved (of {n} given): routed {r_pass}, baseline {b_pass} "
+          f"-> {(r_pass - b_pass) / n * 100:+.1f} points")
+
     r_scored = n - stats["routed"]["errors"]
     b_scored = n - stats["baseline"]["errors"]
-    if r_scored and b_scored:
-        r_rate = stats["routed"]["pass"] / r_scored * 100
-        b_rate = stats["baseline"]["pass"] / b_scored * 100
-        print(f"quality difference: {r_rate - b_rate:+.1f} points "
-              f"({stats['routed']['pass']}/{r_scored} vs {stats['baseline']['pass']}/{b_scored})")
-        if stats["routed"]["errors"] or stats["baseline"]["errors"]:
-            print("  note: arms answered different numbers of tasks; "
-                  "rates compared, not totals")
+    if stats["routed"]["errors"] or stats["baseline"]["errors"]:
+        print(f"  excluding calls that failed outright: "
+              f"{r_pass}/{r_scored} vs {b_pass}/{b_scored}. Those failures are an "
+              f"availability problem, but the arms then answered different numbers "
+              f"of questions, so this figure is not a like-for-like comparison.")
     print("\nrouted traffic went to:")
     for m, c in sorted(stats["routed"]["models"].items(), key=lambda kv: -kv[1]):
         print(f"  {m:30s} {c}")

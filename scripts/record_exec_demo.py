@@ -220,23 +220,23 @@ def tradeoff_slide(cap):
     d.text((60, 145), "It depends which models you allow", font=F_H2, fill=WHITE)
 
     panel(d, 60, 235, 720, 320, "ALLOWING THE FREE LOCAL MODEL")
-    d.text((90, 300), f"routed        {q['weak_routed_pct']}%", font=F_H2, fill=AMBER)
-    d.text((90, 365), f"always strong {q['weak_baseline_pct']}%", font=F_H2, fill=MUTED)
+    d.text((90, 300), f"routed        {q['weak_routed_solved']} of {q['weak_n']}", font=F_H2, fill=AMBER)
+    d.text((90, 365), f"always strong {q['weak_baseline_solved']} of {q['weak_n']}", font=F_H2, fill=MUTED)
     d.text((90, 450), f"{q['weak_delta']} points of correctness", font=F_BODY, fill=AMBER)
-    d.text((90, 490), "for a 100% saving.", font=F_BODY, fill=MUTED)
+    d.text((90, 490), "for a 100% saving. A real loss.", font=F_BODY, fill=MUTED)
 
     panel(d, 820, 235, 720, 320, "RESTRICTED TO STRONGER TIERS")
-    d.text((850, 300), f"routed        {q['routed_pct']}%", font=F_H2, fill=GREEN)
-    d.text((850, 365), f"always strong {q['baseline_pct']}%", font=F_H2, fill=MUTED)
-    d.text((850, 450), f"{q['delta']} points of correctness", font=F_BODY, fill=GREEN)
-    d.text((850, 490), "for a 96.5% saving.", font=F_BODY, fill=MUTED)
+    d.text((850, 300), f"routed        {q['routed_solved']} of {q['n']}", font=F_H2, fill=GREEN)
+    d.text((850, 365), f"always strong {q['baseline_solved']} of {q['n']}", font=F_H2, fill=MUTED)
+    d.text((850, 450), "one task apart, over three runs", font=F_BODY, fill=GREEN)
+    d.text((850, 490), "for a 96% saving.", font=F_BODY, fill=MUTED)
 
-    d.text((60, 600), "Routing did not cost quality here. It beat always-use-the-flagship,", font=F_BODY, fill=WHITE)
-    d.text((60, 640), "because a small modern model outperformed an older large one.", font=F_BODY, fill=MUTED)
+    d.text((60, 600), "Routing did not beat the flagship. It matched it, within noise,", font=F_BODY, fill=WHITE)
+    d.text((60, 640), "and did the same work for about a twenty-fifth of the price.", font=F_BODY, fill=MUTED)
     d.text((60, 685), f"Correctness is the benchmark's own test suite executed over {q['n']} tasks, not a model's opinion.", font=F_SMALL, fill=MUTED)
     caption(d, ["The honest question is not whether routing costs quality, but which models you allow.",
-                "Let it use a tiny free model and accuracy drops. Restrict it to stronger tiers and it beat",
-                "always-using-the-flagship, for a fraction of the cost."])
+                "Let it use a tiny free model and accuracy really does drop. Restrict it to stronger tiers",
+                "and it matched always-using-the-flagship - one task apart across seventy-two - for a fraction of the cost."])
     return hold(img, 16)
 
 

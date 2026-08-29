@@ -341,17 +341,33 @@ model's opinion.
 python scripts/evaluate_routing_quality.py --n 24 --baseline gpt-4o
 ```
 
-**The answer depends entirely on which models you let it pick.** Same 24 tasks,
+**The answer depends entirely on which models you let it pick.** Same tasks,
 same baseline:
 
 | Fleet the router could choose from | Routed | Baseline `gpt-4o` | Quality | Cost |
 |---|---|---|---|---|
 | Default, including the free local 7B | 14/24 (58.3%) | 20/24 (83.3%) | **−25.0 pts** | 100% lower |
-| OpenAI tiers only (`gpt-5-nano` … `gpt-4o`) | 21/22 (95.5%) | 21/24 (87.5%) | **+8.0 pts** | 96.5% lower |
+| OpenAI tiers only (`gpt-5-nano` … `gpt-4o`) | 60/72 (83.3%) | 61/72 (84.7%) | **−1.4 pts** | 96% lower |
 
-Routing to the free local model costs real accuracy. Routing within OpenAI's
-own tiers was *better* than always using `gpt-4o`, at a fraction of the cost —
-the small modern model beat the older flagship on this benchmark.
+Routing to the free local model costs real accuracy — that gap is large enough
+to be the finding, not the noise.
+
+Routing within OpenAI's own tiers is a different story: over three runs of 24
+tasks, routing solved 60 and always-`gpt-4o` solved 61. **One task apart, which
+on 72 samples is noise.** The cost difference is not noise. The honest reading
+is *the same work for about a twenty-fifth of the price*, not "routing is more
+accurate".
+
+Per-run, routed vs baseline: 21/21, 20/20, 19/20. If you re-run it you will get
+your own spread; that is what a sample this size looks like.
+
+**Read tasks solved, not pass rate.** When a call fails outright, that arm
+attempted fewer questions. Dividing its wins by the smaller number flatters it:
+an arm that errored twice and solved exactly as many tasks scores several points
+"higher" purely for having been asked less. An earlier version of this README
+reported +8.0 points from precisely that artifact — both arms had solved 21. The
+harness now leads with solves out of tasks *given* and labels the error-adjusted
+figure as the secondary, non-like-for-like number it is.
 
 So the useful question is not "does routing hurt quality" but "which floor do
 you set". Use `ROUTING_MODELS` to set it, and re-run the benchmark to see what

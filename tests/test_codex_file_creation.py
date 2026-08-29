@@ -8,6 +8,14 @@ from main import app
 
 init_db()
 
+# This test calls real providers and asserts on what a model chose to emit, so
+# it fails whenever a key is missing, a quota is spent, or a model simply
+# answers in prose that turn. That is not something a newcomer running the
+# README's "pytest tests/ -q" should have to interpret, so it is opt-in.
+@pytest.mark.skipif(
+    os.getenv("WORMHOLE_LIVE_TESTS", "").lower() not in ("1", "true", "yes"),
+    reason="Live provider test. Set WORMHOLE_LIVE_TESTS=1 to run it.",
+)
 @pytest.mark.asyncio
 async def test_codex_file_creation_live_proxy():
     PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

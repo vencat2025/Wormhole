@@ -165,6 +165,11 @@ Create `opencode.json` in your project:
 opencode run "add a health check endpoint"
 ```
 
+OpenCode refuses writes outside the directory it was started in
+(`permission requested: external_directory; auto-rejecting`). Run it from your
+project root, and add `--auto` for non-interactive runs if you want it to
+proceed without prompting.
+
 OpenCode picks one model per session and has no task-based routing of its own,
 so the routing here is additive rather than duplicated.
 
@@ -177,6 +182,19 @@ Verified against the free Groq tier:
 | **Claude Code** | no | **yes** | ~30k tokens per turn. Exceeds Groq's 8k/minute free ceiling; fine on a provider without one |
 
 All three verified end to end, creating real files.
+
+**Give agentic work a capable tier.** Claude Code sends a much larger preamble
+than the others, and the weakest models lose the thread under it: routed to
+`gpt-5-nano`, Claude Code reported creating a file, named a full path for it,
+and had created nothing. The same request on `gpt-4o-mini` wrote the file
+correctly. This is the failure mode the project exists to prevent, so if you run
+Claude Code through the gateway, set a floor:
+
+```bash
+export ROUTING_MODELS="gpt-4o-mini,gpt-4o"
+```
+
+`scripts/evaluate_routing_quality.py` measures what a given floor costs or buys.
 
 One model-specific limit: `gpt-5.6-sol` rejects function tools on
 `/v1/chat/completions` ("use the Responses API"), so it is marked

@@ -132,9 +132,39 @@ export ANTHROPIC_API_KEY="any-non-empty-value"
 claude
 ```
 
-> Claude Code sends around 40k tokens per turn, which exceeds a Groq free-tier
-> account's per-minute limit. It needs a paid tier or a large local model. Codex
-> works on the free tier because it sends far less.
+### OpenCode
+
+Create `opencode.json` in your project:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "wormhole": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "WormHole Local Gateway",
+      "options": { "baseURL": "http://127.0.0.1:8000/v1", "apiKey": "wh-local" },
+      "models": { "wormhole-auto": { "name": "WormHole Auto Router" } }
+    }
+  },
+  "model": "wormhole/wormhole-auto"
+}
+```
+
+```bash
+opencode run "add a health check endpoint"
+```
+
+OpenCode picks one model per session and has no task-based routing of its own,
+so the routing here is additive rather than duplicated.
+
+Verified against the free Groq tier:
+
+| Harness | Works on a free tier? | Why |
+|---|---|---|
+| **Codex CLI** | yes | ~5k tokens per turn after tool budgeting |
+| **OpenCode** | yes | small payload; created files and passing tests in testing |
+| **Claude Code** | no | ~9k tokens per turn against Groq's 8k/minute ceiling — needs a paid tier or a large local model |
 
 ---
 

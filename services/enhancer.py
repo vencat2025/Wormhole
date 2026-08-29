@@ -73,6 +73,10 @@ async def enhance_prompt(original_prompt: str, model_name: str = None, for_tools
     model = model_name or settings.ENHANCER_MODEL
     
     try:
+        # A local model needs its base URL supplied explicitly, so that
+        # JUDGE_MODEL/ENHANCER_MODEL can point at ollama/ and keep the
+        # whole pipeline on the machine.
+        extra = {"api_base": settings.OLLAMA_BASE_URL} if model.startswith("ollama/") else {}
         response = await litellm.acompletion(
             model=model,
             messages=[
@@ -80,6 +84,7 @@ async def enhance_prompt(original_prompt: str, model_name: str = None, for_tools
                 {"role": "user", "content": f"Original Prompt:\n{original_prompt}"}
             ],
             temperature=0.3,
+            **extra,
             max_tokens=2048
         )
         enhanced_text = response.choices[0].message.content.strip()

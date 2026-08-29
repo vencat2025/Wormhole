@@ -62,6 +62,10 @@ async def evaluate_completion(
     feedback = ""
     
     try:
+        # A local model needs its base URL supplied explicitly, so that
+        # JUDGE_MODEL/ENHANCER_MODEL can point at ollama/ and keep the
+        # whole pipeline on the machine.
+        extra = {"api_base": settings.OLLAMA_BASE_URL} if model.startswith("ollama/") else {}
         response = await litellm.acompletion(
             model=model,
             messages=[
@@ -73,6 +77,7 @@ async def evaluate_completion(
             ],
             response_format={"type": "json_object"},
             temperature=0.0,
+            **extra,
             # 256 truncated the JSON mid-object, which the provider then
             # rejected as json_validate_failed, so nothing was ever scored.
             max_tokens=800

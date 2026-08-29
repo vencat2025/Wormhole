@@ -41,9 +41,48 @@ flowchart LR
     style G fill:#ecfdf5,stroke:#10b981
 ```
 
-The router is a scikit-learn model in `models/router_slm.joblib`. It takes
-about a millisecond and needs no network. It is trained on benchmark data to
-start with, then on your own scored traffic.
+---
+
+## The 60-second version
+
+**Two small models do the thinking, and they live on your laptop.**
+
+**1. The router** decides where each request goes. It is a scikit-learn
+classifier in `models/router_slm.joblib` — text in, model name out, about a
+millisecond, no network call. It ships trained on a generated benchmark set:
+several thousand prompts spanning easy, medium and hard versions of coding,
+maths and reasoning tasks, each labelled with the cheapest model whose published
+benchmark scores clear that difficulty. That is enough to be useful on day one
+and no more.
+
+**2. The enhancer** rewrites the prompt when the request is heading for a weaker
+model, spelling out the constraints and expected output that a stronger model
+would have inferred. Strong tiers skip it.
+
+**3. The judge** scores the result out of 10 after each turn. It sees the tool
+calls the agent made, not just its prose, so an agent that quietly did the work
+is not marked down for failing to paste code.
+
+**4. Retraining closes the loop.** The scores become router training data:
+
+```
+score >= 7  ->  the model that ran was good enough, so this prompt is
+                labelled with it
+score <  7  ->  the task needed more than it got, so this prompt is
+                relabelled one tier up
+no score    ->  ignored
+```
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/router/retrain
+# {"status":"success","feedback_examples_used":114, ...}
+```
+
+Retraining combines those judged prompts with the original benchmark set and
+rebuilds the classifier. This matters because the shipped router is trained on
+generated templates: it matches phrasing like theirs well and generalises from
+them poorly. Your real prompts are what fix that, so expect it to improve over
+weeks of use rather than immediately.
 
 ---
 
@@ -182,6 +221,39 @@ needed more than it got. Unscored requests are ignored.
 Expect the router to improve as traffic accumulates, not immediately. It ships
 trained on synthetic benchmark prompts, which it matches well and generalises
 from poorly.
+
+### Choosing the judge
+
+The judge runs on every completion, so it wants to be cheap. But it is also the
+only thing steering the router, so a judge that cannot tell good work from bad
+will actively make routing worse.
+
+The test that matters is whether it separates an agent that **did the work**
+from one that **wrote a tutorial** — the failure this project exists to prevent.
+Same task, same rubric, scored 1-10:
+
+| `JUDGE_MODEL` | did the work | wrote a tutorial | separates? | speed | cost |
+|---|---|---|---|---|---|
+| `groq/openai/gpt-oss-20b` *(default)* | 10 | 1 | yes | 0.7s | free tier |
+| `groq/openai/gpt-oss-120b` | 10 | 2 | yes | 0.8s | free tier |
+| `ollama/gemma3:12b` | 10 | 1 | yes | ~25s | free, local |
+| `ollama/qwen2.5-coder:7b` | 10 | **8** | **no** | ~9s | free, local |
+
+Reproduce this on your own hardware before trusting a judge you have not tested.
+
+**For a fully local setup**, use `JUDGE_MODEL=ollama/gemma3:12b`. It judges as
+well as the cloud models here and nothing leaves the machine. It is slow, but
+judging happens in the background after the response has already been streamed
+to you, so it does not delay anything you see.
+
+**Do not use a small coding model as the judge.** `qwen2.5-coder:7b` rates a
+tutorial 8 out of 10. Every one of those scores would teach the router that
+models which explain instead of acting are doing fine.
+
+A judge is best at least as capable as the models it grades. The default is a
+20B model scoring work sometimes done by a 120B one, which is a real limitation
+on the signal — `groq/openai/gpt-oss-120b` costs more per turn and gives a
+better one.
 
 ---
 

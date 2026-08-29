@@ -1,11 +1,11 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html lang='en'>
 <head>
-    <meta charset="UTF-8">
-    <title>Flask Image Display</title>
+    <meta charset='UTF-8'>
+    <title>Image Display</title>
 </head>
 <body>
-    <h1>Image Display</h1>
-    <img src="{{ url_for('static', filename='image.png') }}" alt="Sample Image" style="max-width: 300px;">
+    <h1>Here is the image:</h1>
+    <img src='{{ url_for('static', filename='image.png') }}' alt='Image'>
 </body>
 </html>

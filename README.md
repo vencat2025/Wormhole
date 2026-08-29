@@ -45,44 +45,18 @@ flowchart LR
 
 ## The 60-second version
 
-**Two small models do the thinking, and they live on your laptop.**
+Two small models run on your laptop and do the deciding.
 
-**1. The router** decides where each request goes. It is a scikit-learn
-classifier in `models/router_slm.joblib` — text in, model name out, about a
-millisecond, no network call. It ships trained on a generated benchmark set:
-several thousand prompts spanning easy, medium and hard versions of coding,
-maths and reasoning tasks, each labelled with the cheapest model whose published
-benchmark scores clear that difficulty. That is enough to be useful on day one
-and no more.
+1. **Router** — a scikit-learn classifier: text in, model name out, about a
+   millisecond, no network call. Ships pre-trained on benchmark data.
+2. **Enhancer** — rewrites the prompt when it is heading for a weaker model, so
+   the cheaper tier gets a fair shot. Strong tiers skip it.
+3. **Judge** — scores each result out of 10, reading the tool calls the agent
+   made rather than only its prose.
+4. **Retraining** — those scores become router training data.
 
-**2. The enhancer** rewrites the prompt when the request is heading for a weaker
-model, spelling out the constraints and expected output that a stronger model
-would have inferred. Strong tiers skip it.
-
-**3. The judge** scores the result out of 10 after each turn. It sees the tool
-calls the agent made, not just its prose, so an agent that quietly did the work
-is not marked down for failing to paste code.
-
-**4. Retraining closes the loop.** The scores become router training data:
-
-```
-score >= 7  ->  the model that ran was good enough, so this prompt is
-                labelled with it
-score <  7  ->  the task needed more than it got, so this prompt is
-                relabelled one tier up
-no score    ->  ignored
-```
-
-```bash
-curl -X POST http://127.0.0.1:8000/api/router/retrain
-# {"status":"success","feedback_examples_used":114, ...}
-```
-
-Retraining combines those judged prompts with the original benchmark set and
-rebuilds the classifier. This matters because the shipped router is trained on
-generated templates: it matches phrasing like theirs well and generalises from
-them poorly. Your real prompts are what fix that, so expect it to improve over
-weeks of use rather than immediately.
+The router therefore starts out generic and gradually learns *your* prompts.
+[How it learns](#how-it-learns) has the details.
 
 ---
 

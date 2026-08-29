@@ -1,25 +1,20 @@
-from flask import Flask, render_template_string
+from flask import Flask, render_template, send_from_directory
 import os
 
 app = Flask(__name__)
 
+# Route for home page that displays the image
 @app.route('/')
-def display_image():
-    try:
-        # Ensure the image exists
-        if not os.path.exists('image.jpg'):
-            raise FileNotFoundError("Image file not found")
+def index():
+    return render_template('index.html')
 
-        # Read the image data and encode it in base64
-        with open('image.jpg', 'rb') as image_file:
-            encoded_string = image_file.read().encode('base64').decode('utf-8')
-
-        # HTML to display the image
-        html_content = f'<img src="data:image/jpeg;base64,{encoded_string}" alt="Image"/>'
-
-        return render_template_string(html_content)
-    except Exception as e:
-        return str(e), 500
+# Serve static files (images, css, etc.)
+@app.route('/static/<path:filename>')
+def static_files(filename):
+    return send_from_directory('static', filename)
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Ensure the static folder exists
+    os.makedirs('static', exist_ok=True)
+    # Run the Flask development server
+    app.run(debug=True, host='0.0.0.0', port=5000)

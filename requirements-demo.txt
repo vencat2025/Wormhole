@@ -1,0 +1,7 @@
+# Optional. Only needed to regenerate the demo videos in docs/.
+# The gateway itself does not import any of these.
+-r requirements.txt
+pillow>=10.0.0
+imageio>=2.34.0
+imageio-ffmpeg>=0.4.9
+matplotlib>=3.8.0

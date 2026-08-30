@@ -1,0 +1,34 @@
+#!/usr/bin/env bash
+# Run ONE Claude Code session through the WormHole gateway.
+#
+# Why a wrapper instead of a settings file: Claude Code reads ANTHROPIC_BASE_URL
+# from the process environment only. Putting it in .claude/settings.json under
+# "env" is silently ignored -- other keys from the same file (ANTHROPIC_MODEL)
+# are honoured, so the file looks like it worked while every request still goes
+# straight to Anthropic. Verified on this machine: the gateway logged zero
+# requests for a settings-file session that appeared to succeed.
+#
+# Why not `export` in your shell profile: that captures every Claude session on
+# the machine, including ones you want billed to your Anthropic subscription and
+# ones handling private work. Scope it per invocation instead.
+#
+# Usage:
+#   scripts/claude-routed "task"        # non-interactive
+#   scripts/claude-routed               # interactive TUI
+set -euo pipefail
+
+GATEWAY="${WORMHOLE_URL:-http://127.0.0.1:8000}"   # no /v1 suffix
+
+if ! curl -sS -m 3 "$GATEWAY/v1/models" >/dev/null 2>&1; then
+  echo "claude-routed: no gateway at $GATEWAY -- start it with 'uvicorn main:app'." >&2
+  exit 1
+fi
+
+# Deliberately NOT setting ANTHROPIC_MODEL. Claude Code validates model ids
+# client-side and refuses names it does not know, so "wormhole-auto" is rejected
+# before any request is sent. Letting it send its own model id lets the gateway
+# route the request itself.
+exec env \
+  ANTHROPIC_BASE_URL="$GATEWAY" \
+  ANTHROPIC_AUTH_TOKEN="${WORMHOLE_API_KEY:-local-gateway}" \
+  claude "$@"

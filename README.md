@@ -136,10 +136,43 @@ codex "add a health check endpoint"
 
 ### Claude Code
 
+Use the wrapper, which scopes the redirect to a single session:
+
 ```bash
-export ANTHROPIC_BASE_URL="http://127.0.0.1:8000"   # note: no /v1 here
-export ANTHROPIC_API_KEY="any-non-empty-value"
+scripts/claude-routed "add a health check endpoint"
+```
+
+**Do not put these in your shell profile.** An `export` there sends *every*
+Claude session on the machine through the gateway — including work you want
+billed to your Anthropic subscription, and including private repositories you
+never meant to route. The wrapper sets them for one process and nothing else:
+
+```bash
+ANTHROPIC_BASE_URL="http://127.0.0.1:8000" \
+ANTHROPIC_AUTH_TOKEN="local-gateway" \
 claude
+```
+
+Note there is no `/v1` on that URL — Claude Code appends it.
+
+**A settings file will not work for this.** Putting `ANTHROPIC_BASE_URL` in
+`.claude/settings.json` under `env` is ignored: Claude Code reads that variable
+from the process environment only. The trap is that *other* keys in the same
+file are honoured, so the file looks like it took effect while every request
+still goes straight to Anthropic. Measured here: a settings-file session
+completed its task normally and the gateway logged **zero** requests for it.
+
+Do not set `ANTHROPIC_MODEL` either. Claude Code validates model ids
+client-side and rejects names it does not recognise, so `wormhole-auto` fails
+before a request is sent. Leave it unset and let the gateway route.
+
+**Which models can actually drive Claude Code.** Claude Code's agentic loop is
+demanding, and the cheap tiers do not survive it. Routed to `gpt-5-nano`, a
+one-line "create this file" task burned 19 requests and never created the file.
+Set a floor before routing real work:
+
+```bash
+export ROUTING_MODELS="gpt-4o-mini,gpt-4o"   # in the gateway's own .env
 ```
 
 ### OpenCode

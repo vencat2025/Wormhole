@@ -354,38 +354,36 @@ def loop_slide(cap):
 
 
 def tradeoff_slide(cap):
-    """The payoff, in words rather than fractions.
-
-    This slide used to carry six ratios -- 14 of 24, 20 of 24, 60 of 72, 61 of
-    72, a delta in points, a percentage -- which is the right level of detail
-    for the README and the wrong one for a viewer giving this ninety seconds.
-    The fractions are all still in the repository; what belongs here is what
-    they add up to.
-    """
+    """The payoff, explained as the exam it actually is."""
     q = cap.get("quality")
     if not q:
         return []
-    img, d = base("Does it cost you quality?")
+    img, d = base("Does the cheaper model do worse work?")
 
-    d.text((60, 175), "Same work. Same result.", font=F_H1, fill=WHITE)
-    d.text((60, 245), "About a twenty-fifth of the price.", font=F_H1, fill=GREEN)
+    d.text((60, 165), "Same work. Same result.", font=F_H1, fill=WHITE)
+    d.text((60, 235), "About a twenty-fifth of the price.", font=F_H1, fill=GREEN)
 
-    panel(d, 60, 355, 720, 250, "HOW WE KNOW")
-    d.text((90, 415), f"{q['n']} real coding tasks", font=F_H2, fill=WHITE)
-    d.text((90, 480), "Run twice: once routed,", font=F_BODY, fill=MUTED)
-    d.text((90, 520), "once always on the flagship.", font=F_BODY, fill=MUTED)
-    d.text((90, 565), "Marked by running the tests, not by asking a model.", font=F_SMALL, fill=MUTED)
+    panel(d, 60, 350, 720, 265, "HOW WE CHECKED")
+    d.text((90, 405), "Two students, one exam", font=F_H2, fill=WHITE)
+    d.text((90, 470), f"{q['n']} small programming problems,", font=F_BODY, fill=MUTED)
+    d.text((90, 508), "each with its own answer key.", font=F_BODY, fill=MUTED)
+    d.text((90, 552), "One sitting used routing. One used the", font=F_SMALL, fill=MUTED)
+    d.text((90, 583), "expensive model every time. We ran the code.", font=F_SMALL, fill=MUTED)
 
-    panel(d, 820, 355, 720, 250, "THE CATCH")
-    d.text((850, 415), "Cheap has a floor", font=F_H2, fill=AMBER)
-    d.text((850, 480), "Let it reach for a free tiny", font=F_BODY, fill=MUTED)
-    d.text((850, 520), "model and accuracy does drop.", font=F_BODY, fill=MUTED)
-    d.text((850, 565), "One setting stops that. It is the next slide.", font=F_SMALL, fill=MUTED)
+    panel(d, 820, 350, 720, 265, "THE CATCH")
+    d.text((850, 405), "Cheap has a floor", font=F_H2, fill=AMBER)
+    d.text((850, 470), "Let it reach for a free tiny model", font=F_BODY, fill=MUTED)
+    d.text((850, 508), "and the marks really do drop.", font=F_BODY, fill=MUTED)
+    d.text((850, 552), "One setting stops that.", font=F_SMALL, fill=MUTED)
+    d.text((850, 583), "It is the next slide.", font=F_SMALL, fill=MUTED)
 
-    caption(d, ["Routing did not beat the flagship. It matched it, and cost about a twenty-fifth as much.",
-                "That is measured by running the tasks and checking the answers, not by asking a model for its opinion.",
-                "The catch is that cheap has a floor, and going under it costs you real accuracy."])
-    return hold(img, 15)
+    d.text((60, 660), "Nobody graded this by opinion. The code either passes its tests or it does not.",
+           font=F_BODY, fill=ACCENT)
+    caption(d, ["Two students, the same exam, the same answer key.",
+                "One sitting let the router choose; the other used the expensive model every time.",
+                "They scored the same, and the routed one cost about a twenty-fifth as much.",
+                "Nothing here was graded by opinion - the code either passes its tests or it does not."])
+    return hold(img, 16)
 
 
 def surfaces_slide(cap):
@@ -495,31 +493,38 @@ def family_slide(cap):
 
 
 def api_slide(cap):
-    """Why the top tiers needed real work to reach at all."""
-    img, d = base("Reaching the top tier honestly")
-    d.text((60, 145), "The reasoning tiers refuse tools on the ordinary endpoint", font=F_H2, fill=WHITE)
+    """Why the best models needed work to reach at all, without the API lecture.
 
-    panel(d, 60, 225, 1480, 195, "WHAT THE PROVIDER RETURNS")
-    d.text((90, 285), "Function tools with reasoning_effort are not supported", font=F_MONO_S, fill=AMBER)
-    d.text((90, 325), "in /v1/chat/completions. Use /v1/responses, or set", font=F_MONO_S, fill=AMBER)
-    d.text((90, 365), "reasoning_effort to 'none'.", font=F_MONO_S, fill=AMBER)
+    This slide used to open with three lines of the provider's raw error and
+    the words /v1/chat/completions. That is proof for an engineer and noise for
+    everyone else, so the error is now one small line of evidence underneath
+    the plain-English version rather than the headline.
+    """
+    img, d = base("Making the best models actually work")
+    d.text((60, 150), "The strongest models refuse to do real work the normal way", font=F_H2, fill=WHITE)
 
-    panel(d, 60, 445, 720, 235, "THE EASY WAY OUT")
-    d.text((90, 500), "reasoning_effort = none", font=F_MONO_S, fill=MUTED)
-    d.text((90, 550), "Tools work again.", font=F_BODY, fill=MUTED)
-    d.text((90, 592), "The reasoning is switched off.", font=F_BODY, fill=AMBER)
-    d.text((90, 634), "Top-tier price, no longer a top tier.", font=F_SMALL, fill=AMBER)
+    panel(d, 60, 235, 1480, 130, "WHAT GOES WRONG")
+    d.text((90, 295), "Ask the top model to create a file and the request fails outright.", font=F_BODY, fill=WHITE)
+    d.text((90, 335), "Not a bad answer. No answer at all.", font=F_BODY, fill=MUTED)
 
-    panel(d, 820, 445, 720, 235, "WHAT THIS GATEWAY DOES")
-    d.text((850, 500), "translate to /v1/responses", font=F_MONO_S, fill=GREEN)
-    d.text((850, 550), "Tools and full reasoning together.", font=F_BODY, fill=GREEN)
-    d.text((850, 592), "Every harness gains it unchanged.", font=F_BODY, fill=MUTED)
-    d.text((850, 634), "Verified: Codex wrote a file, then tested it.", font=F_SMALL, fill=MUTED)
+    panel(d, 60, 400, 720, 245, "THE TEMPTING SHORTCUT")
+    d.text((90, 460), "Turn its thinking off", font=F_H2, fill=AMBER)
+    d.text((90, 525), "It works again. But thinking is", font=F_BODY, fill=MUTED)
+    d.text((90, 565), "what you were paying extra for.", font=F_BODY, fill=MUTED)
+    d.text((90, 615), "Top price. No longer a top model.", font=F_SMALL, fill=AMBER)
 
-    caption(d, ["The strongest tiers refuse to use tools on the ordinary endpoint.",
-                "You can buy tool support back by turning the reasoning off, which means paying the top price for a model that no longer reasons.",
-                "So the gateway translates to the endpoint where both work, and every harness gains those models without knowing anything changed."])
-    return hold(img, 16)
+    panel(d, 820, 400, 720, 245, "WHAT THIS DOES INSTEAD")
+    d.text((850, 460), "Use the other entrance", font=F_H2, fill=GREEN)
+    d.text((850, 525), "The provider has a second one where", font=F_BODY, fill=MUTED)
+    d.text((850, 565), "thinking and doing both work.", font=F_BODY, fill=MUTED)
+    d.text((850, 615), "Your coding tool never notices the difference.", font=F_SMALL, fill=MUTED)
+
+    d.text((60, 675), "the provider's own words: \"use /v1/responses, or set reasoning_effort to 'none'\"",
+           font=F_MONO_S, fill=MUTED)
+    caption(d, ["The strongest models will not use tools through the ordinary door.",
+                "There is a shortcut that opens it again by switching the model's thinking off, which means paying the top price for a model that stopped thinking.",
+                "So this uses the other door, where both work, and your coding tool never notices."])
+    return hold(img, 15)
 
 
 def tier_slide(cap):
@@ -545,14 +550,14 @@ def tier_slide(cap):
     d.text((90, 620), "Add a provider key and the pool widens instantly.", font=F_SMALL, fill=MUTED)
 
     panel(d, 820, 455, 720, 210, "WHERE IT IS STILL WEAK")
-    d.text((850, 515), "short hard prompts", font=F_H2, fill=AMBER)
-    d.text((850, 575), "under-routed today", font=F_BODY, fill=MUTED)
+    d.text((850, 515), "hard jobs, cheap model", font=F_H2, fill=AMBER)
+    d.text((850, 575), "it still gets this wrong", font=F_BODY, fill=MUTED)
     d.text((850, 620), "Your judged traffic is what fixes it. A floor bounds it meanwhile.", font=F_SMALL, fill=MUTED)
 
     caption(d, ["The classifier predicts how hard the task is, not which model to use.",
                 "Difficulty is a property of the request, so it stays true however your fleet changes,",
                 "and the gateway spends the least money that buys it from the keys you have.",
-                "It is right about the easy work today and still under-rates short hard instructions, which is the honest state of it."])
+                "It gets the easy work right today, and it still sometimes sends a hard job to a cheap model, which is the honest state of it."])
     return hold(img, 17)
 
 

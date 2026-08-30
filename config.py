@@ -284,7 +284,7 @@ class Settings:
             output_cost_per_1k=0.0012,
             description="Fastest 5.6 reasoning tier. Everyday agentic coding and refactors.",
             speed_tier="fast",
-            intelligence_tier="high",
+            intelligence_tier="medium",
             pricing_verified=True,
             requires_responses_api=True
         ),

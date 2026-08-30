@@ -86,6 +86,41 @@ def _first_routable(model_ids, need_tools: bool) -> str:
     return ""
 
 
+def cheapest_at_or_above(tier: str, need_tools: bool) -> str:
+    """Least expensive reachable model that still clears the given tier.
+
+    This is where a tier becomes a model. "Reachable" already accounts for the
+    provider keys present, tool support, the MIN_ROUTING_TIER floor and any
+    open circuit, so adding a key widens the pool on the next request with no
+    retraining, and removing one narrows it without breaking anything.
+    """
+    from services.dispatcher import is_model_routable
+
+    try:
+        want = TIER_ORDER.index((tier or "").lower())
+    except ValueError:
+        return ""
+
+    reachable = [
+        m for m in settings.CANDIDATE_MODELS
+        if is_model_routable(m.id, need_tools=need_tools)
+    ]
+    if not reachable:
+        return ""
+
+    def tier_of(m) -> int:
+        try:
+            return TIER_ORDER.index((m.intelligence_tier or "").lower())
+        except ValueError:
+            return -1
+
+    at_or_above = [m for m in reachable if tier_of(m) >= want]
+    if at_or_above:
+        return min(at_or_above, key=lambda m: (m.input_cost_per_1k, m.output_cost_per_1k)).id
+    # Nothing that strong is reachable; the best available is the honest answer.
+    return max(reachable, key=lambda m: (tier_of(m), -m.input_cost_per_1k)).id
+
+
 def _substitute_at_tier(predicted_model: str, need_tools: bool) -> str:
     """Cheapest reachable model no weaker than the one the classifier wanted.
 
@@ -143,14 +178,30 @@ async def route_prompt(enhanced_prompt: str, model_name: str = None, has_tools: 
     local_slm = _get_local_router_slm() if settings.ROUTER_MODE != "llm" else None
     if local_slm is not None:
         try:
-            predicted_model = local_slm.predict([enhanced_prompt])[0]
+            predicted_model = str(local_slm.predict([enhanced_prompt])[0])
 
-            # The classifier's pick stands unless it cannot actually be
-            # reached: no credentials, a rejected key, no tool support on an
-            # agentic turn, or an open circuit. Substituting only in those
-            # cases keeps routing meaningful, where an unconditional override
-            # would retire the classifier entirely.
-            if is_model_routable(predicted_model, need_tools=has_tools):
+            # Current classifiers predict a capability tier, which is a
+            # property of the prompt and so survives any change to the fleet.
+            # Resolve it against whatever is reachable right now.
+            if predicted_model in TIER_ORDER:
+                chosen = cheapest_at_or_above(predicted_model, has_tools)
+                if chosen:
+                    cfg = settings.model_config_for(chosen)
+                    served = cfg.intelligence_tier if cfg else predicted_model
+                    note = "" if served == predicted_model else (
+                        f" (nothing at '{predicted_model}' is reachable, so '{served}' is the closest available)"
+                    )
+                    return chosen, (
+                        f"⚡ Local Router SLM (<2ms): task needs the '{predicted_model}' tier; "
+                        f"'{chosen}' is the cheapest reachable model that clears it{note}."
+                    )
+                logger.warning("No reachable model for tier '%s'.", predicted_model)
+
+            # Older classifiers were trained to predict a model id. Their pick
+            # stands when it can actually be reached: no credentials, a
+            # rejected key, no tool support on an agentic turn, or an open
+            # circuit are the only reasons to override it.
+            elif is_model_routable(predicted_model, need_tools=has_tools):
                 return predicted_model, (
                     f"⚡ Local Router SLM (<2ms): selected '{predicted_model}' on benchmark capability matching."
                 )

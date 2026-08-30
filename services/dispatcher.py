@@ -976,6 +976,9 @@ async def dispatch_streaming_inference(
     full_completion = ""
     reported_usage = None
     has_native_tool_calls = False
+    # index -> {"name", "arguments"}, rebuilt from the streamed deltas so the
+    # judge can be shown what the agent actually did.
+    streamed_fn_calls: Dict[int, Dict[str, str]] = {}
     try:
         extra_kwargs = {}
         if selected_model.startswith("ollama/"):
@@ -1015,6 +1018,18 @@ async def dispatch_streaming_inference(
                         tc.model_dump(exclude_none=True) if hasattr(tc, "model_dump") else dict(tc)
                         for tc in delta_obj.tool_calls
                     ]
+                    # Accumulate them for the judge as well as forwarding them.
+                    # A tool-only turn streams no text, so without this the
+                    # judge is handed an empty string, scores it 1.0 for
+                    # "no completion provided", and the feedback loop reads
+                    # that as the task having outgrown the model.
+                    for tc in delta_obj.tool_calls:
+                        idx = getattr(tc, "index", 0) or 0
+                        slot = streamed_fn_calls.setdefault(idx, {"name": "", "arguments": ""})
+                        fn = getattr(tc, "function", None)
+                        if fn is not None:
+                            slot["name"] = getattr(fn, "name", "") or slot["name"]
+                            slot["arguments"] += getattr(fn, "arguments", "") or ""
                 if hasattr(delta_obj, "role") and delta_obj.role and not tools:
                     delta_dict["role"] = delta_obj.role
 
@@ -1195,7 +1210,15 @@ async def dispatch_streaming_inference(
     except Exception as db_err:
         logger.error(f"Failed to save streaming log: {db_err}")
 
-    schedule_judging(request_id, enhanced_prompt, full_completion)
+    tool_summary = describe_tool_calls([
+        {"name": fn["name"], "arguments": fn["arguments"]} for fn in streamed_fn_calls.values()
+    ])
+    # Same reasoning as the Codex and Anthropic paths: the actions are the
+    # work on an agentic turn, and judging the prose alone penalises correct
+    # tool use. This path was missing it, so every tool-only turn here scored
+    # 1.0 and the feedback loop escalated its prompt a tier.
+    judged_text = "\n\n".join(p for p in (tool_summary, full_completion) if p)
+    schedule_judging(request_id, enhanced_prompt, judged_text, agentic=bool(tools))
 
 async def dispatch_responses_streaming_inference(
     original_prompt: str,

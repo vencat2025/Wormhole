@@ -489,23 +489,9 @@ against `sol` at **$0.0040 / $0.0200** — twenty times cheaper on input for the
 renames and docstrings that make up most of a session, with `sol` still there
 for the work that earns it.
 
-**`ROUTER_MODE=llm` is doing real work in that example.** The bundled classifier
-was trained on an older fleet and knows none of the 5.6 ids, so on this ladder
-every prediction misses and falls back to a tier substitution — which keeps how
-hard the task looked but loses the model-level judgement. Measured: the
-classifier rates a zero-downtime sharding migration "medium", and the ladder
-above collapses to `luna` for everything but two prompts. The gateway warns
-about this at startup rather than letting you find it in your bill:
-
-```
-WARNING  The local router was trained on a different fleet (...) and none of
-         those models are reachable now, so every prediction falls back to a
-         tier substitution. Set ROUTER_MODE=llm for judgement on this fleet,
-         or retrain: POST /api/router/retrain.
-```
-
-`llm` costs one cheap call per decision (~300ms) and judges the fleet in front
-of it. Retraining on your own judged traffic gets the sub-2ms path back.
+That table was produced with `ROUTER_MODE=llm`. The local classifier gets the
+cheap end of it right and still under-routes the hard end — see
+[what the router can and cannot do](#what-the-router-can-and-cannot-do).
 
 ---
 
@@ -575,19 +561,93 @@ data for the router:
 curl -X POST http://127.0.0.1:8000/api/router/retrain
 ```
 
-A good score means the model that ran was adequate for that prompt, so it
-becomes a training label. A poor score relabels the prompt one tier up: the task
-needed more than it got. Unscored requests are ignored.
+A judge score **bounds** the difficulty rather than measuring it, and reading it
+symmetrically is a mistake this project made and has now fixed:
 
-The bootstrap set is built from real benchmark items — HumanEval, MBPP and
-GSM8K, fetched by `scripts/fetch_benchmark_prompts.py` and cached rather than
-committed — plus templates for the categories no public dataset covers
-(multi-file refactors, migrations, architecture, proof obligations).
+- A **failure** at some tier proves the task needs more than that tier. Real
+  evidence, wherever it happens. The prompt is relabelled one tier up.
+- A **success on a cheap tier** proves the task needs at most that tier. Real
+  evidence, and the only way the router ever learns to route *down*.
+- A **success on a strong tier** proves nothing — of course the expensive model
+  managed it — so it is discarded rather than believed.
 
-Expect the router to improve as your traffic accumulates. The bootstrap gives
-it real task phrasing, but its *labels* still come from published benchmark
-pass rates rather than from observing which model actually succeeded on each
-prompt. Your judged traffic is what replaces those approximations.
+That last rule matters more than it sounds. Without it, every request a strong
+model handled well taught the router that its prompt *required* a strong model.
+Measured in this repository's own log: "How do I format a JSON string in
+Python?" had been labelled **frontier**, purely because a 120B model answered it
+well. Unscored requests, and requests where the judge was handed an empty
+completion, are ignored entirely.
+
+Retraining is a local command and needs no API key:
+
+```bash
+python models/train_router.py
+```
+
+The bootstrap set is built from real benchmark items — SWE-bench, HumanEval,
+GSM8K, MATH, GPQA — fetched by `scripts/fetch_benchmark_prompts.py` and cached
+rather than committed. Tier labels come from measured difficulty: SWE-bench
+instances below a 0.2 pass rate across the published field are frontier, and
+GPQA is graduate-level by construction.
+
+Expect the router to improve as your traffic accumulates. The bootstrap gives it
+real task phrasing, but its labels come from published benchmark pass rates
+rather than from watching which model actually succeeded on *your* prompts. Your
+judged traffic is what replaces those approximations, and it is the only thing
+that closes the short-instruction gap described below.
+
+### What the router can and cannot do
+
+The classifier predicts a **capability tier** — basic, medium, high, frontier —
+and not a model id. That is the whole design, and it is what makes the routing
+work against whatever keys you have added:
+
+```
+prompt ──► classifier ──► "this needs the 'high' tier"
+                              │
+                              ▼
+             cheapest model you can reach that clears 'high'
+```
+
+A tier is a property of the prompt. "This task needs real reasoning" stays true
+whether you have one provider key or five. A model id is a property of your
+fleet, so the moment the fleet changes, every label a model-id classifier
+learned is wrong. That was not hypothetical: pointed at an all-5.6 ladder, the
+previous classifier's labels had all ceased to exist, and a rename and a
+zero-downtime sharding migration both landed on the cheapest tier. Add a
+provider key now and the pool widens on the very next request, with no
+retraining.
+
+**Where it is honest to say it works.** Bootstrap labels come from measured
+benchmark difficulty, not opinion: SWE-bench publishes a per-instance pass rate
+across 134 systems, so the instances almost nothing solved are the ones marked
+frontier. The classifier scores about **90% on a held-out split** of that data
+and decides in **under a millisecond**, locally, with no network call.
+
+**Where it is weak, measured.** Held-out benchmark accuracy is not the same as
+accuracy on what you type at a harness. On seven short instructions the local
+classifier put the three easy ones (`rename`, `add a docstring`, `write a
+regex`) on the cheapest tier correctly, and under-routed the hard ones — it
+rates "design a zero-downtime migration to shard the orders table" as *medium*.
+The cause is coverage, not labelling: every hard example in the bootstrap is a
+multi-paragraph bug report or a maths problem, and nothing in it is a short
+imperative sentence that happens to be hard.
+
+This is the gap your own traffic closes, and it is the reason the learning loop
+exists. Until it does, `MIN_ROUTING_TIER` is the guard that matters: it bounds
+how far wrong an under-route can go.
+
+**One more thing worth knowing before you read a small saving as a bug.**
+Routing down only saves money if something cheaper exists. If the cheapest
+model that can drive a harness is already a strong tier — Groq's free
+`gpt-oss-20b` is `high` at $0.000075/1k — then every decision correctly lands
+there and the gateway has nothing to save. The gateway says so at startup:
+
+```
+INFO  Cheapest tool-capable model (groq/openai/gpt-oss-20b) is already 'high'
+      tier, so most requests will route there and cost savings will be small.
+      Add a cheaper capable model to widen the spread.
+```
 
 ### Choosing the judge
 

@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select, func
 
-from config import settings
+from config import settings, TIER_ORDER
 from db.database import init_db, engine
 from db.models import InferenceLog, RoutingDecision
 from services.enhancer import enhance_prompt
@@ -68,22 +68,38 @@ async def lifespan(app: FastAPI):
             logger.info("Quality floor: nothing below '%s' will be chosen.",
                         settings.MIN_ROUTING_TIER)
 
-        # The classifier can only name models it was trained on. Restrict the
-        # fleet to models outside that set and every prediction misses, so each
-        # decision degrades to a tier substitution -- which preserves how hard
-        # the task looked but loses the model-level judgement. Worth saying out
-        # loud, because the symptom is bad routing, not an error.
+        # A classifier that predicts tiers is fleet-independent, so there is
+        # nothing to warn about. One that predicts model ids is not: restrict
+        # the fleet to models outside its training set and every prediction
+        # misses. Worth saying out loud, because the symptom is bad routing
+        # rather than an error.
         if settings.ROUTER_MODE != "llm":
             from services.router import _get_local_router_slm
             slm = _get_local_router_slm()
             known = {str(c) for c in getattr(slm, "classes_", [])} if slm is not None else set()
-            if known and not (known & set(chat)):
+            if known and not known <= set(TIER_ORDER) and not (known & set(chat)):
                 logger.warning(
-                    "The local router was trained on a different fleet (%s) and none of "
-                    "those models are reachable now, so every prediction falls back to a "
-                    "tier substitution. Set ROUTER_MODE=llm for judgement on this fleet, "
-                    "or retrain: POST /api/router/retrain.",
+                    "The local router predicts model ids and was trained on a fleet that is "
+                    "no longer reachable (%s), so every prediction falls back to a tier "
+                    "substitution. Retrain to get a fleet-independent router: "
+                    "python models/train_router.py",
                     ", ".join(sorted(known)[:3]) + ("..." if len(known) > 3 else ""),
+                )
+
+        # Routing down only saves money if something cheaper exists. When the
+        # cheapest model that can drive a harness already sits at a strong
+        # tier, every decision correctly lands on it and the gateway is doing
+        # nothing for cost -- which looks like broken routing unless said.
+        cheap = [settings.model_config_for(m) for m in agentic]
+        cheap = [c for c in cheap if c]
+        if cheap:
+            floor_model = min(cheap, key=lambda c: c.input_cost_per_1k)
+            if floor_model.intelligence_tier.lower() in ("high", "frontier"):
+                logger.info(
+                    "Cheapest tool-capable model (%s) is already '%s' tier, so most requests "
+                    "will route there and cost savings will be small. Add a cheaper capable "
+                    "model to widen the spread.",
+                    floor_model.id, floor_model.intelligence_tier,
                 )
     yield
 

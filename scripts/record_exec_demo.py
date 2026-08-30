@@ -9,6 +9,9 @@ will later ask to see substantiated.
 
 import json
 import os
+import re
+import shutil
+import subprocess
 import sys
 
 from PIL import Image, ImageDraw, ImageFont
@@ -19,6 +22,15 @@ CAPTURE = os.path.join(ROOT, "data", "exec_demo_capture.json")
 OUT = os.path.join(ROOT, "docs", "wormhole_exec_demo.mp4")
 
 W, H, FPS = 1600, 900, 30
+
+# Narration. Off by default so the video still renders with no key and no
+# network; WORMHOLE_VOICE=1 turns it on.
+VOICE = os.getenv("WORMHOLE_VOICE", "").strip() not in ("", "0", "false")
+VOICE_MODEL = os.getenv("WORMHOLE_VOICE_MODEL", "gpt-4o-mini-tts")
+VOICE_NAME = os.getenv("WORMHOLE_VOICE_NAME", "onyx")
+VOICE_CACHE = os.path.join(ROOT, "data", "narration_cache")
+VOICE_PAD = 1.0   # seconds of quiet after each line, so slides do not run on
+FFMPEG = imageio_ffmpeg.get_ffmpeg_exe()
 BG = (11, 15, 25)
 PANEL = (17, 24, 39)
 LINE = (31, 41, 55)
@@ -72,9 +84,132 @@ def caption(d, lines):
     d.line([(0, top - 26), (W, top - 26)], fill=LINE, width=2)
     for i, text in enumerate(lines):
         d.text((60, top + i * 34), text, font=F_CAP, fill=(203, 213, 225))
+    _PENDING.clear()
+    _PENDING.extend(lines)
+
+
+# Narration lines drawn on the current slide, consumed by the next hold().
+_PENDING = []
+
+# (audio_path_or_None, seconds) per slide, in order. Built during rendering so
+# the audio track and the frames cannot drift apart.
+SEGMENTS = []
+
+# How the narrator should pronounce things written for the eye. Without this a
+# reader says "slash a p i slash logs" and "g p t dash five dash nano", which
+# sounds like a machine reading a config file rather than someone explaining a
+# result. On-screen text is untouched; only the spoken form changes.
+SPOKEN = {
+    "MIN_ROUTING_TIER=medium": "min routing tier set to medium",
+    "MIN_ROUTING_TIER": "min routing tier",
+    "gpt-oss-120b": "the 120B open-source model",
+    "gpt-5-nano": "GPT 5 nano",
+    "gpt-5-mini": "GPT 5 mini",
+    "gpt-5.6-luna": "GPT 5.6 Luna",
+    "gpt-4o-mini": "GPT 4o mini",
+    "gpt-4o": "GPT 4o",
+    "/api/logs": "the logs endpoint",
+    "config.toml": "config dot toml",
+    "opencode.json": "opencode dot json",
+    "claude-routed": "the Claude wrapper",
+    "codex-routed": "the Codex wrapper",
+    "MBPP": "M B P P",
+    "SWE-bench": "swee bench",
+    "SLM": "small language model",
+}
+
+
+def spoken_form(text):
+    for written, said in SPOKEN.items():
+        text = text.replace(written, said)
+    return text
+
+
+def narrate(text):
+    """Synthesize one line of narration, returning a cached file path.
+
+    Cached on a hash of the exact text: re-rendering the video after a wording
+    change pays only for the lines that changed, and re-rendering after a
+    layout change pays nothing at all.
+    """
+    if not VOICE or not text.strip():
+        return None
+    import hashlib
+    key = hashlib.sha256(f"{VOICE_MODEL}|{VOICE_NAME}|{text}".encode()).hexdigest()[:16]
+    path = os.path.join(VOICE_CACHE, f"{key}.mp3")
+    if os.path.exists(path):
+        return path
+    try:
+        from openai import OpenAI
+        os.makedirs(VOICE_CACHE, exist_ok=True)
+        client = OpenAI()
+        with client.audio.speech.with_streaming_response.create(
+            model=VOICE_MODEL,
+            voice=VOICE_NAME,
+            input=text,
+            instructions=(
+                "Read as an engineer explaining a measured result to colleagues: "
+                "even, unhurried, and matter-of-fact. No sales enthusiasm."
+            ),
+        ) as response:
+            response.stream_to_file(path)
+        print(f"   synthesized {len(text):3d} chars -> {os.path.basename(path)}")
+        return path
+    except Exception as e:
+        # A missing key or a network failure must not cost you the video.
+        print(f"   narration unavailable ({e}); rendering this slide silent.")
+        return None
+
+
+def audio_seconds(path):
+    """Duration of a clip, read from ffmpeg's own report.
+
+    imageio-ffmpeg ships ffmpeg without ffprobe, so this parses the Duration
+    line rather than assuming a probe binary that is not there.
+    """
+    proc = subprocess.run([FFMPEG, "-i", path], capture_output=True, text=True)
+    m = re.search(r"Duration:\s*(\d+):(\d+):(\d+\.?\d*)", proc.stderr)
+    if not m:
+        return 0.0
+    h, mnt, sec = m.groups()
+    return int(h) * 3600 + int(mnt) * 60 + float(sec)
+
+
+def hold_frames(frames):
+    """Register an already-animated slide with the narration track.
+
+    Slides that build their own frames must still contribute a segment, or the
+    audio track comes out shorter than the video and every slide after them
+    plays against the wrong narration.
+    """
+    text = spoken_form(" ".join(_PENDING)).strip()
+    _PENDING.clear()
+
+    path = narrate(text)
+    seconds = len(frames) / FPS
+    if path:
+        needed = audio_seconds(path) + VOICE_PAD
+        if needed > seconds:
+            frames.extend([frames[-1]] * int(FPS * (needed - seconds)))
+            seconds = len(frames) / FPS
+    SEGMENTS.append((path, seconds))
+    return frames
 
 
 def hold(img, seconds):
+    """Hold a slide, extending it if its narration needs longer.
+
+    The written durations were tuned for reading speed, so they are kept as a
+    floor: a slide never gets *shorter* because the narrator was quick, and
+    never clips its own audio because the narrator was slow.
+    """
+    text = spoken_form(" ".join(_PENDING)).strip()
+    _PENDING.clear()
+
+    path = narrate(text)
+    if path:
+        seconds = max(seconds, audio_seconds(path) + VOICE_PAD)
+    SEGMENTS.append((path, seconds))
     return [img] * int(FPS * seconds)
 
 
@@ -158,7 +293,7 @@ def routing_slide(cap):
     img, d = frames[-1].copy(), None
     _, d = base("Live routing decisions")
     frames.extend([frames[-1]] * int(FPS * 7))
-    return frames
+    return hold_frames(frames)
 
 
 def evidence_slide(cap):
@@ -330,12 +465,66 @@ def main():
                evidence_slide, tradeoff_slide, floor_slide, loop_slide, close_slide):
         frames += fn(cap)
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    wr = imageio_ffmpeg.write_frames(OUT, (W, H), fps=FPS, quality=8)
+    silent = OUT if not any(p for p, _ in SEGMENTS) else OUT.replace(".mp4", ".silent.mp4")
+    wr = imageio_ffmpeg.write_frames(silent, (W, H), fps=FPS, quality=8)
     wr.send(None)
     for f in frames:
         wr.send(f.tobytes())
     wr.close()
-    print(f"Wrote {OUT} ({len(frames)} frames, {len(frames)/FPS:.1f}s)")
+    print(f"Wrote video ({len(frames)} frames, {len(frames)/FPS:.1f}s)")
+
+    if silent == OUT:
+        return
+
+    # The audio track is assembled from SEGMENTS; if their total does not match
+    # the frames actually written, the narration drifts against the picture.
+    # Catch that here rather than letting someone notice it on LinkedIn.
+    seg_frames = int(sum(sec for _, sec in SEGMENTS) * FPS)
+    if abs(seg_frames - len(frames)) > FPS:
+        sys.exit(f"narration/video mismatch: {seg_frames} vs {len(frames)} frames. "
+                 "A slide is building frames without registering a segment.")
+    mux(silent)
+
+
+def mux(silent):
+    """Lay each slide's narration over that slide and attach the track.
+
+    Each segment is padded out to its slide's exact length, so a slide that
+    ran long for readability holds in silence rather than pulling the next
+    slide's narration forward. Drift cannot accumulate.
+    """
+    tmp = os.path.join(ROOT, "data", "_narration_build")
+    os.makedirs(tmp, exist_ok=True)
+    parts = []
+    for i, (path, seconds) in enumerate(SEGMENTS):
+        part = os.path.join(tmp, f"seg{i:02d}.wav")
+        if path:
+            # apad then a hard -t gives exactly the slide's duration.
+            cmd = [FFMPEG, "-y", "-loglevel", "error", "-i", path,
+                   "-af", "apad", "-t", f"{seconds:.3f}",
+                   "-ar", "44100", "-ac", "2", part]
+        else:
+            cmd = [FFMPEG, "-y", "-loglevel", "error", "-f", "lavfi",
+                   "-i", "anullsrc=r=44100:cl=stereo", "-t", f"{seconds:.3f}", part]
+        subprocess.run(cmd, check=True)
+        parts.append(part)
+
+    listing = os.path.join(tmp, "parts.txt")
+    with open(listing, "w") as fh:
+        for part in parts:
+            fh.write(f"file '{part}'\n")
+
+    track = os.path.join(tmp, "narration.wav")
+    subprocess.run([FFMPEG, "-y", "-loglevel", "error", "-f", "concat",
+                    "-safe", "0", "-i", listing, "-c", "copy", track], check=True)
+
+    subprocess.run([FFMPEG, "-y", "-loglevel", "error", "-i", silent, "-i", track,
+                    "-c:v", "copy", "-c:a", "aac", "-b:a", "160k",
+                    "-shortest", OUT], check=True)
+    os.remove(silent)
+    shutil.rmtree(tmp, ignore_errors=True)   # intermediates, not artefacts
+    spoken = sum(1 for p, _ in SEGMENTS if p)
+    print(f"Wrote {OUT} with narration on {spoken}/{len(SEGMENTS)} slides")
 
 
 if __name__ == "__main__":

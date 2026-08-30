@@ -574,6 +574,30 @@ measurement.
 
 ---
 
+## Regenerating the demo video
+
+```bash
+python scripts/record_exec_demo.py                    # silent, no key needed
+WORMHOLE_VOICE=1 python scripts/record_exec_demo.py   # narrated
+```
+
+Narration is spoken from the same caption lines the slides already display, so
+there is no second script to keep in sync. Clips are cached under
+`data/narration_cache/` keyed by a hash of the exact text: the first narrated
+render costs about three cents, and every render after it costs nothing unless
+you change the wording, in which case you pay only for the lines that changed.
+
+Slide durations are a floor, never a ceiling — a slide holds for its written
+duration or its narration's length, whichever is longer, so audio is never
+clipped and a slide never gets shorter than it was tuned to be for reading.
+
+`WORMHOLE_VOICE_NAME` and `WORMHOLE_VOICE_MODEL` override the voice. Technical
+strings get a spoken form before synthesis (`MIN_ROUTING_TIER=medium` is read
+as "min routing tier set to medium"), which is what stops it sounding like a
+machine reading a config file.
+
+---
+
 ## Project layout
 
 ```

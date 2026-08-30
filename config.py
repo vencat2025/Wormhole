@@ -88,9 +88,15 @@ class Settings:
     # ollama/ id stays on this machine.
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
 
-    # Capability tiers that get prompt enhancement. The enhancer exists to lift
-    # a weaker model's output toward what a frontier model would have produced,
-    # so it is wasted on the strong tiers and skipped there.
+    # Enable or disable prompt enhancement. Enhancement rewrites prompts for weak
+    # models, intending to lift output quality. Trade-off: adds ~500ms latency and
+    # an extra API call per request, but no measured proof it helps enough to justify
+    # the cost. Users should decide: cheaper routing (disable) or smarter routing (enable).
+    ENABLE_ENHANCEMENT: bool = os.getenv("ENABLE_ENHANCEMENT", "true").lower() in ("true", "1", "yes")
+
+    # Capability tiers that get prompt enhancement when ENABLE_ENHANCEMENT=true.
+    # The enhancer exists to lift a weaker model's output toward what a frontier
+    # model would have produced, so it is wasted on the strong tiers and skipped there.
     ENHANCE_TIERS: List[str] = [
         t.strip().lower() for t in os.getenv("ENHANCE_TIERS", "basic,medium").split(",") if t.strip()
     ]

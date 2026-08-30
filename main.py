@@ -190,13 +190,16 @@ async def chat_completions(
     # Step 2: Selective Prompt Enhancement (Model 1)
     raw_messages = [m.model_dump(exclude_none=True) for m in request.messages]
 
-    if settings.should_enhance_for(selected_model):
+    if settings.ENABLE_ENHANCEMENT and settings.should_enhance_for(selected_model):
         enhanced_prompt = await enhance_prompt(original_prompt, for_tools=bool(request.tools))
         raw_messages = apply_enhanced_prompt(raw_messages, enhanced_prompt)
         router_reasoning += f" | Prompt enhanced for {selected_model}"
     else:
         enhanced_prompt = original_prompt
-        router_reasoning += " | Enhancement skipped (model already in a strong tier)"
+        if not settings.ENABLE_ENHANCEMENT:
+            router_reasoning += " | Enhancement disabled"
+        else:
+            router_reasoning += " | Enhancement skipped (model already in a strong tier)"
 
     # Handle SSE token streaming if stream=True
     if request.stream:

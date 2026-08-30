@@ -456,24 +456,48 @@ All optional — set in `.env`. See `.env.example` for the full list.
 | `ROUTING_PROVIDERS` | all | Restrict to one vendor, e.g. `openai` |
 | `ROUTING_MODELS` | all | Restrict to an exact list of approved models |
 | `ROUTER_MODE` | `auto` | `slm` (local, instant), `llm` (smarter, ~300ms), `auto` |
+| `ENABLE_ENHANCEMENT` | `true` | Rewrite prompts for weak models (adds ~500ms latency, extra API call) |
 | `ENHANCE_TIERS` | `basic,medium` | Which model tiers get prompt enhancement |
 | `ENABLE_AUTH` | `false` | Require a bearer token on the gateway |
 | `ENABLE_JUDGING` | `true` | Run LLM-as-judge on every completion (feeds learning loop) |
 | `JUDGE_SAMPLE_RATE` | `1.0` | Fraction of completions to judge (0.0–1.0; 0.1 = judge 10%) |
 
-### Cost vs. Learning Trade-Off
+### Cost vs. Quality Trade-Offs
 
-**Routing** is free (local SLM, <2ms). **Judging adds overhead.**
+**Routing** is free (local SLM, <2ms). **But enhancement and judging add overhead.**
 
-Every completion is scored by the judge model to feed training data back into the
-router. This makes routing smarter over time as your traffic accumulates, but it
-costs ~10–30% extra on top of the routed request cost (async, so doesn't delay
-your response).
+**Prompt Enhancement** — rewrites weak-model prompts to be more explicit:
+- Costs: ~500ms latency + extra API call per weak-model request
+- Benefit: *Theory* that better prompts → better output from cheap models
+- **No measured proof** that the cost is worth it on your workload
+- Default: enabled; disable to cut latency and API costs
 
-If cost matters more than learning:
-- `ENABLE_JUDGING=false` — disable scoring, skip the learning loop
-- `JUDGE_SAMPLE_RATE=0.1` — judge only 10% of traffic
-- `JUDGE_MODEL=ollama/gemma3:12b` — use a local judge (zero cost, slower)
+**Judging** — scores every completion to improve the router over time:
+- Costs: ~10–30% extra on routed request cost (async, doesn't delay response)
+- Benefit: router learns from your traffic, improves with use
+- Default: enabled; disable if cost is more important than learning
+
+**Pick your trade-off:**
+```bash
+# Maximize cost (disable learning and enhancement)
+ENABLE_ENHANCEMENT=false
+ENABLE_JUDGING=false
+
+# Balance cost and learning (enable judging, disable enhancement)
+ENABLE_ENHANCEMENT=false
+ENABLE_JUDGING=true
+JUDGE_SAMPLE_RATE=0.1  # judge 10% only
+
+# Full quality (enable both, but sample judging)
+ENABLE_ENHANCEMENT=true
+ENABLE_JUDGING=true
+JUDGE_SAMPLE_RATE=1.0
+
+# Fully local (zero cloud overhead for learning)
+ENABLE_ENHANCEMENT=true
+ENABLE_JUDGING=true
+JUDGE_MODEL=ollama/gemma3:12b
+```
 
 Editing the model list itself — adding a model, changing a price, marking a
 model unsuitable for tool use — happens in `CANDIDATE_MODELS` in `config.py`.

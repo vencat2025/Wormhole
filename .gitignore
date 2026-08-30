@@ -14,3 +14,4 @@ data/benchmark_cache/
 # Intermediate audio from the demo renderer; the cache beside it is kept
 # deliberately so re-rendering the video costs nothing.
 data/_narration_build/
+data/_gif_build/

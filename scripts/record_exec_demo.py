@@ -148,10 +148,11 @@ def narrate(text):
             voice=VOICE_NAME,
             input=text,
             instructions=(
-                "Read with genuine excitement about the technical result. You discovered "
-                "something that actually works better than expected. Emphasize the surprising "
-                "parts: routing is cheaper AND faster, same accuracy for a fraction of cost. "
-                "Vary pace and energy — slow for setup, fast for results. This is news."
+                "You are a startup founder pitching your vision to investors. Optimistic, "
+                "storytelling, paint a picture of how this solves a real problem. Build narrative "
+                "momentum: start with the problem (expensive models), then the insight (local routing), "
+                "then the payoff (same quality, fraction of cost). Sound like you believe in this. "
+                "Energetic but not frantic. You're inviting people into a better future."
             ),
         ) as response:
             response.stream_to_file(path)

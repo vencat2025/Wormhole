@@ -29,14 +29,14 @@ def create_frame_title():
     draw_header(draw)
     
     # Hero Title
-    draw.text((50, 140), "WormHole Universal AI Inference Gateway", fill=(255, 255, 255), font_size=36)
-    draw.text((50, 190), "100% Provider-Agnostic (Groq, OpenAI, Anthropic, Gemini, Ollama)", fill=SUBTEXT_COLOR, font_size=20)
+    draw.text((50, 140), "WormHole — a local model router", fill=(255, 255, 255), font_size=36)
+    draw.text((50, 190), "Works with Groq, OpenAI, Anthropic, Gemini and local Ollama models", fill=SUBTEXT_COLOR, font_size=20)
     
     # Feature Boxes
     boxes = [
         ("🔌 Provider-Agnostic Core", "Routes to Groq, OpenAI, Claude, Gemini & Ollama"),
-        ("🎯 Model 2: Local Router SLM", "Routes tasks via sub-2ms SLMs (<$0 cost)"),
-        ("✨ Model 1: Local Enhancer SLM", "Enriches prompts for quality in <1ms"),
+        ("🎯 Local router", "Picks a tier on your machine, no network call"),
+        ("✨ Prompt enhancer", "Rewrites prompts before they hit a cheaper tier"),
         ("🛠️ Stream Tool Engine", "Converts code -> native CLI tool_calls (exec)")
     ]
     

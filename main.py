@@ -40,8 +40,33 @@ from contextlib import asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     logger.info("WormHole DB Initialized successfully.")
-    from services.dispatcher import _load_exhausted_providers
+    from services.dispatcher import _load_exhausted_providers, is_model_routable
     _load_exhausted_providers()
+
+    # Say plainly, at startup, what this instance can actually serve. Without
+    # this a first-time user who set up only a local model sees a coding agent
+    # fail on its first turn with a routing error, and has no way to tell that
+    # the cause is configuration rather than a bug.
+    chat = [m.id for m in settings.CANDIDATE_MODELS if is_model_routable(m.id)]
+    agentic = [m.id for m in settings.CANDIDATE_MODELS if is_model_routable(m.id, need_tools=True)]
+    if not chat:
+        logger.error(
+            "No model is reachable. Add at least one provider key to .env "
+            "(GROQ_API_KEY is free to obtain), or start Ollama for local models."
+        )
+    elif not agentic:
+        logger.warning(
+            "Chat works (%s), but no tool-capable model is reachable, so Codex, "
+            "Claude Code and OpenCode will fail on their first turn. Local models "
+            "cannot drive an agentic harness; add a cloud provider key to .env.",
+            ", ".join(chat),
+        )
+    else:
+        logger.info("Routing over %d models (%d can drive coding agents).",
+                    len(chat), len(agentic))
+        if settings.MIN_ROUTING_TIER:
+            logger.info("Quality floor: nothing below '%s' will be chosen.",
+                        settings.MIN_ROUTING_TIER)
     yield
 
 app = FastAPI(

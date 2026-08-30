@@ -103,13 +103,38 @@ You only need one. Cheapest to start with:
 
 | Provider | Where | Notes |
 |---|---|---|
-| **Groq** | [console.groq.com/keys](https://console.groq.com/keys) | Free tier available. Good place to start. |
-| **Ollama** | [ollama.com](https://ollama.com) | Runs locally, no key, no cost. `ollama pull qwen2.5-coder:7b` |
+| **Groq** | [console.groq.com/keys](https://console.groq.com/keys) | Free tier. **Start here** — it can drive coding agents. |
 | OpenAI | [platform.openai.com](https://platform.openai.com/api-keys) | Needs billing credits |
 | Google | [aistudio.google.com](https://aistudio.google.com/apikey) | Needs billing credits |
+| Ollama | [ollama.com](https://ollama.com) | Local, free — but see the warning below |
 
-Models whose provider has no key are skipped automatically, so an
-`.env` with only `GROQ_API_KEY` set is a perfectly valid setup.
+Models whose provider has no key are skipped automatically, so an `.env` with
+only `GROQ_API_KEY` set is a perfectly valid setup.
+
+**Ollama alone is not enough for a coding agent.** A local 7B model cannot
+reliably drive Codex or Claude Code — it degrades to printing JSON as text
+instead of calling tools — so it is excluded from agentic turns by design. Set
+up with only Ollama and your first Codex turn has nothing to route to. The
+gateway says so at startup rather than letting you discover it mid-task:
+
+```
+WARNING  Chat works (ollama/qwen2.5-coder:7b), but no tool-capable model is
+         reachable, so Codex, Claude Code and OpenCode will fail on their first
+         turn. Add a cloud provider key to .env.
+```
+
+Ollama is genuinely useful for plain chat and for trying the dashboard at zero
+cost. For agents, pair it with one cloud key.
+
+**One setting worth knowing now**, before you point an agent at this:
+
+```bash
+MIN_ROUTING_TIER=medium   # already the default in .env.example
+```
+
+Nothing weaker than that tier gets picked. Routed to the cheapest tier instead,
+a one-line file-creation task in Claude Code spent 19 requests and never created
+the file. [Full detail below](#setting-a-quality-floor).
 
 ---
 

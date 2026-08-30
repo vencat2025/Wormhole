@@ -1,15 +1,22 @@
 # WormHole
 
-**Your harness doesn't need the most expensive model for every task.**
+**An experiment: does your harness really need the most expensive model for
+every task?**
 
 WormHole is a small local gateway that sits between your harness and the
 model providers. (*Harness* is the tool you actually type into: Codex CLI,
-Claude Code, OpenCode.) It looks at each request, picks the cheapest model that can
-actually handle it, and gets out of the way.
+Claude Code, OpenCode.) It looks at each request, picks a cheaper model when it
+judges the task does not need the expensive one, and gets out of the way.
 
 You keep using Codex CLI or Claude Code exactly as you do now.
 
-![Five tasks routed to three different tiers, then the measured result](docs/wormhole_highlight.gif)
+**This does not come with a headline number, deliberately.** Whether it saves
+you anything, and whether that costs you quality, depends on your fleet, your
+prompts and where you set the floor. There is a script here that measures both
+on your own setup, and that answer is worth more than one of ours. Try it and
+see what you get.
+
+![Five tasks routed across three different model tiers](docs/wormhole_highlight.gif)
 
 That loop is cut from the narrated video below, which is worth the three
 minutes if the idea interests you — the GIF has no audio, and the narration
@@ -639,11 +646,16 @@ zero-downtime sharding migration both landed on the cheapest tier. Add a
 provider key now and the pool widens on the very next request, with no
 retraining.
 
-**Where it is honest to say it works.** Bootstrap labels come from measured
-benchmark difficulty, not opinion: SWE-bench publishes a per-instance pass rate
-across 134 systems, so the instances almost nothing solved are the ones marked
-frontier. The classifier scores about **90% on a held-out split** of that data
-and decides in **under a millisecond**, locally, with no network call.
+**What the labels are built from.** Bootstrap labels come from measured
+benchmark difficulty rather than opinion: SWE-bench publishes a per-instance
+pass rate across 134 systems, so the instances almost nothing solved are the
+ones marked frontier. The classifier reproduces those labels on a held-out
+split of that data about nine times in ten, and decides in under a millisecond,
+locally, with no network call.
+
+Read that as a statement about the training data, not a promise about your
+prompts. Scoring well against benchmark text is not the same as judging the
+sentences you type at a harness, which is the next paragraph.
 
 **Where it is weak, measured.** Held-out benchmark accuracy is not the same as
 accuracy on what you type at a harness. On seven short instructions the local
@@ -739,43 +751,47 @@ model's opinion.
 python scripts/evaluate_routing_quality.py --n 24 --baseline gpt-4o
 ```
 
-**The answer depends entirely on which models you let it pick.** Same tasks,
-same baseline:
+**We are not publishing a headline number for this, on purpose.**
 
-| Fleet the router could choose from | Routed | Baseline `gpt-4o` | Quality | Cost |
-|---|---|---|---|---|
-| Default, including the free local 7B | 14/24 (58.3%) | 20/24 (83.3%) | **−25.0 pts** | 100% lower |
-| OpenAI tiers only (`gpt-5-nano` … `gpt-4o`) | 60/72 (83.3%) | 61/72 (84.7%) | **−1.4 pts** | 96% lower |
+An earlier version of this README carried one, and re-measuring it is what
+convinced us to take it down. Two things moved it:
 
-Routing to the free local model costs real accuracy — that gap is large enough
-to be the finding, not the noise.
+- **The cost side was estimated, not measured.** It guessed tokens from text
+  length while the provider's real counts sat unused in the same response.
+  Reasoning models break that guess badly, because the tokens they spend
+  thinking never appear in the text. Corrected, one run's saving went from the
+  96% we had been quoting to 45%.
+- **The routing changed underneath it.** The classifier was retrained to
+  predict capability tiers rather than model ids, which is the right design and
+  a different router. The old number was measured on the old one.
 
-Routing within OpenAI's own tiers is a different story: over three runs of 24
-tasks, routing solved 60 and always-`gpt-4o` solved 61. **One task apart, which
-on 72 samples is noise.** The cost difference is not noise. The honest reading
-is *the same work for about a twenty-fifth of the price*, not "routing is more
-accurate".
+The result depends on your fleet, your floor, your prompts and the sample size,
+and it moves enough between runs that any single figure we printed here would be
+closer to marketing than measurement. So the honest version is: **run it and
+find out on your own setup.**
 
-Per-run, routed vs baseline: 21/21, 20/20, 19/20. If you re-run it you will get
-your own spread; that is what a sample this size looks like.
+What the script does give you is a real comparison. It executes both arms over
+the same tasks and marks them by running MBPP's own assertions, so correctness
+is a test suite passing rather than a model's opinion, and cost comes from the
+providers' reported token counts.
+
+Two things worth knowing before you read your own output:
+
+**Use at least `--n 24`.** Below that the arms cannot be told apart. At `--n 4`
+we saw routing score 2 against the baseline's 4, which reads like a rout and is
+a coin landing badly. The script warns you about this now.
 
 **Read tasks solved, not pass rate.** When a call fails outright, that arm
-attempted fewer questions. Dividing its wins by the smaller number flatters it:
-an arm that errored twice and solved exactly as many tasks scores several points
-"higher" purely for having been asked less. An earlier version of this README
-reported +8.0 points from precisely that artifact — both arms had solved 21. The
-harness now leads with solves out of tasks *given* and labels the error-adjusted
-figure as the secondary, non-like-for-like number it is.
-
-So the useful question is not "does routing hurt quality" but "which floor do
-you set". Use `ROUTING_MODELS` to set it, and re-run the benchmark to see what
-that choice costs or buys on your own fleet.
+attempted fewer questions, and dividing its wins by the smaller number flatters
+it. An earlier version of this README reported +8.0 points from exactly that
+artifact when both arms had solved 21. The script now leads with solves out of
+tasks *given*.
 
 **Give reasoning models room.** They spend most of their output budget thinking
 before answering. `--max-tokens` defaults to 3000 for that reason: at 700,
 `gpt-5-nano` returned `finish_reason=length` with no content at all, and an
-earlier run of this benchmark scored that as failure and reported −58 points.
-The harness now flags truncation instead of counting it as a wrong answer.
+earlier run scored that as a wrong answer and reported −58 points. Truncation is
+now flagged rather than counted as failure.
 
 The LLM-as-judge score in the dashboard is a different thing: one model grading
 another, with no ground truth. Treat it as a hint. This benchmark is the

@@ -354,35 +354,35 @@ def loop_slide(cap):
 
 
 def tradeoff_slide(cap):
-    """The payoff, explained as the exam it actually is."""
-    q = cap.get("quality")
-    if not q:
-        return []
-    img, d = base("Does the cheaper model do worse work?")
+    """Where a measured result used to sit.
 
-    d.text((60, 165), "Same work. Same result.", font=F_H1, fill=WHITE)
-    d.text((60, 235), "About a twenty-fifth of the price.", font=F_H1, fill=GREEN)
+    It carried "same work, same result, about a twenty-fifth of the price".
+    Re-measuring took that down: the cost half had been estimated from text
+    length rather than read from the provider's own token counts, and once
+    corrected one run's saving fell from 96% to 45%. The routing had also been
+    retrained in between, so the old figure described a different router.
+    Rather than print a new number with the same short shelf life, this now
+    says what the honest answer is -- run it yourself.
+    """
+    img, d = base("Does it cost you quality?")
 
-    panel(d, 60, 350, 720, 265, "HOW WE CHECKED")
-    d.text((90, 405), "Two students, one exam", font=F_H2, fill=WHITE)
-    d.text((90, 470), f"{q['n']} small programming problems,", font=F_BODY, fill=MUTED)
-    d.text((90, 508), "each with its own answer key.", font=F_BODY, fill=MUTED)
-    d.text((90, 552), "One sitting used routing. One used the", font=F_SMALL, fill=MUTED)
-    d.text((90, 583), "expensive model every time. We ran the code.", font=F_SMALL, fill=MUTED)
+    d.text((60, 175), "We are not going to tell you a number.", font=F_H1, fill=WHITE)
+    d.text((60, 250), "Measure it on your own setup.", font=F_H1, fill=GREEN)
 
-    panel(d, 820, 350, 720, 265, "THE CATCH")
-    d.text((850, 405), "Cheap has a floor", font=F_H2, fill=AMBER)
-    d.text((850, 470), "Let it reach for a free tiny model", font=F_BODY, fill=MUTED)
-    d.text((850, 508), "and the marks really do drop.", font=F_BODY, fill=MUTED)
-    d.text((850, 552), "One setting stops that:", font=F_SMALL, fill=MUTED)
-    d.text((850, 583), "MIN_ROUTING_TIER=medium", font=F_MONO_S, fill=ACCENT)
+    panel(d, 60, 360, 1480, 150, "ONE COMMAND, BOTH ARMS, YOUR FLEET")
+    d.text((90, 420), "python scripts/evaluate_routing_quality.py --n 24 --baseline gpt-4o",
+           font=F_MONO, fill=GREEN)
+    d.text((90, 465), "Runs the same tasks twice: once routed, once always on the expensive model.",
+           font=F_SMALL, fill=MUTED)
 
-    d.text((60, 660), "Nobody graded this by opinion. The code either passes its tests or it does not.",
-           font=F_BODY, fill=ACCENT)
-    caption(d, ["Two students, the same exam, the same answer key.",
-                "One sitting let the router choose; the other used the expensive model every time.",
-                "They scored the same, and the routed one cost about a twenty-fifth as much.",
-                "Nothing here was graded by opinion - the code either passes its tests or it does not."])
+    d.text((60, 560), "It marks the answers by running the tests, so correctness is not an opinion.",
+           font=F_BODY, fill=WHITE)
+    d.text((60, 605), "Costs come from the providers' own token counts, not an estimate.", font=F_BODY, fill=MUTED)
+    d.text((60, 660), "The result depends on your fleet, your prompts, and where you set the floor.",
+           font=F_BODY, fill=MUTED)
+    caption(d, ["We are deliberately not giving you a headline number here.",
+                "The one we used to show did not survive being re-measured, and the answer depends on your fleet and your prompts anyway.",
+                "One command runs both sides on your own setup and marks them by executing the tests. Trust that, not us."])
     return hold(img, 16)
 
 
@@ -545,7 +545,7 @@ def tier_slide(cap):
            font=F_BODY, fill=GREEN)
 
     panel(d, 60, 455, 720, 210, "WHAT THAT BUYS")
-    d.text((90, 515), f"{t['ms']} ms per decision", font=F_H2, fill=GREEN)
+    d.text((90, 515), "under a millisecond", font=F_H2, fill=GREEN)
     d.text((90, 575), "on this machine, no network call", font=F_BODY, fill=MUTED)
     d.text((90, 620), "Add a provider key and the pool widens instantly.", font=F_SMALL, fill=MUTED)
 

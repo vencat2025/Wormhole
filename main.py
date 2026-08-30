@@ -1043,6 +1043,29 @@ def get_dashboard():
     </table>
 
     <script>
+        // The endpoints holding prompt history sit behind verify_api_key, so
+        // when ENABLE_AUTH is on this same-origin dashboard needs the key too.
+        // Ask once, keep it for the tab only, and never write it to disk.
+        async function api(path, options) {
+            const opts = Object.assign({}, options || {});
+            const key = sessionStorage.getItem('wormhole_key');
+            if (key) {
+                opts.headers = Object.assign({}, opts.headers, {'Authorization': 'Bearer ' + key});
+            }
+            let res = await fetch(path, opts);
+            if (res.status === 401) {
+                const entered = window.prompt(
+                    'This gateway has ENABLE_AUTH turned on.\n' +
+                    'Enter one of your WORMHOLE_API_KEYS to view the dashboard:');
+                if (!entered) return res;
+                sessionStorage.setItem('wormhole_key', entered);
+                opts.headers = Object.assign({}, opts.headers, {'Authorization': 'Bearer ' + entered});
+                res = await fetch(path, opts);
+                if (res.status === 401) sessionStorage.removeItem('wormhole_key');
+            }
+            return res;
+        }
+
         function escapeHtml(str) {
             if (!str) return '';
             return String(str)
@@ -1071,7 +1094,7 @@ def get_dashboard():
 
         async function fetchAnalytics() {
             try {
-                const res = await fetch('/api/logs');
+                const res = await api('/api/logs');
                 const data = await res.json();
                 const s = data.summary;
                 
@@ -1132,7 +1155,7 @@ def get_dashboard():
         async function triggerRetrain() {
             try {
                 alert("⚡ Retraining local SLMs from latest DB completions and judge feedback...");
-                const res = await fetch('/api/router/retrain', { method: 'POST' });
+                const res = await api('/api/router/retrain', { method: 'POST' });
                 const data = await res.json();
                 alert(`✅ Retraining Complete!\n${data.message}`);
                 fetchAnalytics();
@@ -1143,7 +1166,7 @@ def get_dashboard():
 
         async function fetchRouting() {
             try {
-                const res = await fetch('/api/routing/decisions?limit=25');
+                const res = await api('/api/routing/decisions?limit=25');
                 const data = await res.json();
                 const s = data.summary;
                 const badge = document.getElementById('toptier-badge');

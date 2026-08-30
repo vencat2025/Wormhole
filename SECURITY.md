@@ -26,6 +26,46 @@ coding agent sends. A few things follow from that:
 - **`wormhole.db` records prompts and completions.** That is how the routing
   feedback loop works, and it means the file contains whatever you asked your
   agent. It is gitignored. Treat it as you would your shell history.
+- **Cross-origin access is off unless you ask for it.** Any page in your
+  browser can send requests to `127.0.0.1`, so a gateway that answers them
+  cross-origin lets any site you visit read your prompt history. Earlier
+  versions did exactly that: `allow_origins=["*"]` with credentials allowed
+  meant a request carrying `Origin: https://evil.example.com` got that origin
+  reflected back and a readable body of prompts. Fixed by defaulting to no
+  cross-origin access at all. `CORS_ORIGINS` can name specific origins if you
+  really are fronting this from elsewhere; do not put `*` there.
+- **The endpoints that expose prompts require auth.** `/api/logs`,
+  `/api/routing/decisions`, `/api/dataset/export` and `/api/router/retrain` sit
+  behind `verify_api_key`, so turning `ENABLE_AUTH` on actually protects the
+  prompt history and not only the inference routes. The dashboard is served
+  from the same origin and is unaffected.
+
+## If a key has ever been committed
+
+Purging it from history is necessary and not sufficient. **Rotate the key.**
+
+`git filter-repo` rewrites your local history, but a key that was ever pushed
+should be treated as disclosed:
+
+- GitHub keeps unreferenced objects reachable by commit SHA after a force-push.
+  Anyone who saw the old SHA can still fetch the blob until GitHub garbage
+  collects it, and that is not automatic — you have to ask GitHub Support to
+  run it for the repository.
+- Anyone who cloned or forked before the rewrite still has the original
+  objects, and nothing you do to your copy reaches theirs.
+- Automated scrapers watch public pushes for credential patterns. For a key
+  pushed to a public repository, assume it was collected within minutes.
+
+So the order that actually works is: **rotate the key at the provider first**,
+then purge history, then ask GitHub Support to garbage collect, and only then
+consider making the repository public. Rotating last leaves a live credential
+exposed for the whole window.
+
+Rotate at:
+[Groq](https://console.groq.com/keys) ·
+[OpenAI](https://platform.openai.com/api-keys) ·
+[Google AI Studio](https://aistudio.google.com/apikey) ·
+[Anthropic](https://console.anthropic.com/settings/keys)
 
 ## Maintenance expectations
 

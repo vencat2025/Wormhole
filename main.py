@@ -110,13 +110,40 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Cross-origin access is off by default, and that is a security boundary
+# rather than a default nobody thought about.
+#
+# This gateway listens on loopback and holds the plaintext prompt and
+# completion history in a local database. The attacker that matters is not a
+# remote host -- it cannot reach 127.0.0.1 -- it is any page the operator
+# happens to have open in a browser, which can issue requests to localhost.
+# With allow_origins=["*"] and allow_credentials=True, Starlette reflects the
+# requesting origin back and the browser hands that page the response. Measured
+# before this change: a request carrying "Origin: https://evil.example.com" got
+# back "access-control-allow-origin: https://evil.example.com" and a readable
+# body containing the operator's prompts. For a gateway whose entire pitch is
+# that prompts stay on the machine, that was the worst possible bug.
+#
+# The dashboard is served from this same app and uses relative URLs, so it is
+# same-origin and needs no CORS grant at all. Anyone genuinely fronting this
+# from another origin can name it explicitly; a wildcard cannot be reinstated
+# by accident.
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+if CORS_ORIGINS:
+    if "*" in CORS_ORIGINS:
+        logger.warning(
+            "CORS_ORIGINS contains '*', which lets any website you visit read this "
+            "gateway's prompt history from your browser. Name the origins instead."
+        )
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=CORS_ORIGINS,
+        # Never with a wildcard, and not needed here: this gateway authenticates
+        # with a bearer token, not a cookie.
+        allow_credentials=False,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
 
 CAPTURE_PATH = os.getenv("WORMHOLE_CAPTURE_FILE")
 
@@ -775,7 +802,7 @@ def list_candidate_models():
     return {"models": settings.CANDIDATE_MODELS}
 
 @app.get("/api/logs")
-def list_logs(limit: int = 50, offset: int = 0):
+def list_logs(limit: int = 50, offset: int = 0, auth_token: str = Depends(verify_api_key)):
     with Session(engine) as session:
         statement = select(InferenceLog).order_by(InferenceLog.id.desc()).offset(offset).limit(limit)
         logs = session.exec(statement).all()
@@ -812,7 +839,7 @@ def list_logs(limit: int = 50, offset: int = 0):
         }
 
 @app.get("/api/routing/decisions")
-def routing_decisions(limit: int = 50):
+def routing_decisions(limit: int = 50, auth_token: str = Depends(verify_api_key)):
     """Advisory routing history.
 
     Reports tier usage rather than spend. Under a subscription the bill is
@@ -845,7 +872,8 @@ def routing_decisions(limit: int = 50):
     }
 
 @app.get("/api/dataset/export")
-def export_dataset(target: str = "router", min_score: float = 7.0):
+def export_dataset(target: str = "router", min_score: float = 7.0,
+                   auth_token: str = Depends(verify_api_key)):
     jsonl_content = export_dataset_jsonl(target_type=target, min_score=min_score)
     return PlainTextResponse(
         content=jsonl_content,
@@ -854,7 +882,7 @@ def export_dataset(target: str = "router", min_score: float = 7.0):
     )
 
 @app.post("/api/router/retrain")
-def retrain_models_from_feedback():
+def retrain_models_from_feedback(auth_token: str = Depends(verify_api_key)):
     from models.train_router import train_router_slm
     from models.train_quality_evaluator import train_quality_evaluator_slm
     

@@ -88,13 +88,21 @@ def run_tests(code: str, tests: List[str]) -> bool:
         os.unlink(path)
 
 
-async def answer(model: str, prompt: str, max_tokens: int) -> Optional[str]:
-    """Return the model's code, or None if the call could not produce one.
+async def answer(model: str, prompt: str, max_tokens: int):
+    """Return (code, usage) -- usage being the provider's own token counts.
 
     A reasoning model that runs out of budget returns finish_reason "length"
     and often no content at all. That is the harness cutting it off, not the
     model answering wrongly, and counting it as a failure understates the model
     badly -- it read as -58 points before this was caught.
+
+    The usage half matters because this script prints a cost next to a pass
+    rate, and the pass rate is a measurement: the code is executed and it either
+    passes or it does not. Estimating the cost beside it -- this previously
+    guessed tokens as len(text) // 4 -- dressed an approximation in the same
+    clothes as the measurement standing next to it. Reasoning models make that
+    guess badly in particular, because tokens they spend thinking never appear
+    in the text at all.
     """
     kwargs = {"api_base": settings.OLLAMA_BASE_URL} if model.startswith("ollama/") else {}
     try:
@@ -103,14 +111,21 @@ async def answer(model: str, prompt: str, max_tokens: int) -> Optional[str]:
             temperature=0, max_tokens=max_tokens, **kwargs)
         choice = r.choices[0]
         content = choice.message.content or ""
+        u = getattr(r, "usage", None)
+        usage = None
+        if u is not None:
+            pt = getattr(u, "prompt_tokens", None)
+            ct = getattr(u, "completion_tokens", None)
+            if pt is not None or ct is not None:
+                usage = (pt or 0, ct or 0)
         if choice.finish_reason == "length" and not content.strip():
             print(f"      {model}: truncated at {max_tokens} tokens, no content; "
                   f"raise --max-tokens", file=sys.stderr)
-            return None
-        return content
+            return None, usage
+        return content, usage
     except Exception as err:
         print(f"      {model}: {type(err).__name__}", file=sys.stderr)
-        return None
+        return None, None
 
 
 async def main() -> int:
@@ -135,8 +150,18 @@ async def main() -> int:
     print(f"Tasks: {len(tasks)} MBPP problems (executable tests)")
     print(f"Baseline arm: {baseline}\n")
 
-    stats = {"routed": {"pass": 0, "cost": 0.0, "errors": 0, "models": {}},
-             "baseline": {"pass": 0, "cost": 0.0, "errors": 0}}
+    # A handful of tasks cannot separate the arms, and the resulting number
+    # looks authoritative anyway. Measured at --n 4: routing scored 2 against
+    # the baseline's 4, which reads as a rout and is a coin landing badly.
+    # Say so before the run rather than under the result, where it would look
+    # like an excuse.
+    if len(tasks) < 20:
+        print(f"NOTE: {len(tasks)} tasks is too few to tell the arms apart. Expect swings "
+              f"of tens of points from luck alone.\n      Use --n 24 or more before "
+              f"quoting the outcome.\n", file=sys.stderr)
+
+    stats = {"routed": {"pass": 0, "cost": 0.0, "errors": 0, "estimated": 0, "models": {}},
+             "baseline": {"pass": 0, "cost": 0.0, "errors": 0, "estimated": 0}}
 
     for i, t in enumerate(tasks, 1):
         prompt = build_prompt(t)
@@ -145,7 +170,7 @@ async def main() -> int:
             routed_model = settings.FALLBACK_MODEL
 
         for arm, model in (("routed", routed_model), ("baseline", baseline)):
-            code = await answer(model, prompt, args.max_tokens)
+            code, usage = await answer(model, prompt, args.max_tokens)
             if code is None:
                 # The call failed. That is an availability problem, not the
                 # model getting the answer wrong, and conflating the two would
@@ -155,8 +180,15 @@ async def main() -> int:
             else:
                 ok = run_tests(code, t["test_list"])
                 stats[arm]["pass"] += ok
-            # Charge roughly what the call used, for a like-for-like comparison.
-            stats[arm]["cost"] += calculate_cost(model, len(prompt) // 4, len(code or "") // 4)
+            # Prefer the provider's own token counts. Fall back to the
+            # character heuristic only where a provider reports nothing, and
+            # count how often that happened so the footer can say so rather
+            # than presenting a mixed figure as if it were all measured.
+            if usage:
+                stats[arm]["cost"] += calculate_cost(model, usage[0], usage[1])
+            else:
+                stats[arm]["cost"] += calculate_cost(model, len(prompt) // 4, len(code or "") // 4)
+                stats[arm]["estimated"] += 1
             if arm == "routed":
                 stats["routed"]["models"][model] = stats["routed"]["models"].get(model, 0) + 1
                 mark = "pass" if ok else "FAIL"
@@ -199,6 +231,14 @@ async def main() -> int:
     for m, c in sorted(stats["routed"]["models"].items(), key=lambda kv: -kv[1]):
         print(f"  {m:30s} {c}")
     print("\nCorrectness is MBPP's own assertions, executed. Not a model's opinion.")
+    est = stats["routed"]["estimated"] + stats["baseline"]["estimated"]
+    if est:
+        print(f"Cost: {est} of {n * 2} calls returned no usage, so those are estimated "
+              f"from text length; the rest are the providers' own token counts.")
+    else:
+        print("Cost is the providers' own reported token counts, at litellm's published rates.")
+    if n < 20:
+        print(f"\nWith only {n} tasks this comparison is noise. Re-run with --n 24 or more.")
     return 0
 
 

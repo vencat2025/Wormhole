@@ -113,61 +113,89 @@ Models whose provider has no key are skipped automatically, so an
 
 ---
 
-## Point your coding tool at it
+## Your options, at a glance
 
-### Codex CLI
+|  | Interactive session | Exec / one-shot |
+|---|---|---|
+| **Codex** | `model_provider` in `~/.codex/config.toml` | `scripts/codex-routed --exec "task"` |
+| **Claude Code** | `.envrc` via direnv, or `scripts/claude-routed` | `scripts/claude-routed -p "task"` |
+| **OpenCode** | `opencode.json` in the project | `opencode run "task"` |
 
-Define the provider in `~/.codex/config.toml`, but **do not** set
-`model_provider` at the top of the file:
+Interactive is a one-time config change, then you use the tool exactly as you
+always have. Exec is for when something else is doing the calling.
+
+---
+
+## Interactive mode: point your tool at the gateway
+
+Configure the tool once and then work normally. Each tool has its own file for
+this — except Claude Code, which needs an environment variable instead, for
+reasons worth reading before you try the config file.
+
+### Codex — `~/.codex/config.toml`
 
 ```toml
+model_provider = "wormhole"
+
 [model_providers.wormhole]
 name = "WormHole"
 base_url = "http://127.0.0.1:8000/v1"
 wire_api = "responses"
 ```
 
-Select it per invocation instead, so the choice stays scoped to that run:
+Then use Codex normally:
+
+```bash
+codex "add a health check endpoint"
+```
+
+**One caveat worth knowing.** On macOS the Codex desktop app reads this same
+file (`CODEX_HOME=~/.codex`), so the top-level `model_provider` line redirects
+the app too — including sessions on a ChatGPT subscription, which then bill per
+token through the gateway rather than against the plan you already pay for. If
+you would rather keep that billing, drop the top-level line and select the
+provider per run instead:
 
 ```bash
 codex -c model_provider="wormhole" "add a health check endpoint"
-codex exec -c model_provider="wormhole" "add a health check endpoint"
 ```
 
-**Why not the top-level line.** On macOS the Codex desktop app reads this same
-file (`CODEX_HOME=~/.codex`), so a top-level `model_provider = "wormhole"`
-redirects the app as well as the CLI — including sessions on a ChatGPT
-subscription, which then bill per token through the gateway instead of against
-the plan you already pay for. If you want that billing preserved, use the
-advisory wrapper below rather than proxying Codex at all.
+...or skip proxying Codex altogether and use the advisory wrapper further down,
+which keeps the traffic on your own subscription.
 
-### Claude Code
+### Claude Code — environment, not a config file
 
-Use the wrapper, which scopes the redirect to a single session:
+Claude Code has no config-file equivalent for this, and the near-miss is worth
+stating plainly because it fails silently.
+
+**`.claude/settings.json` will not work.** Putting `ANTHROPIC_BASE_URL` in that
+file under `env` is ignored — Claude Code reads that variable from the process
+environment only. The trap is that *other* keys in the same file are honoured,
+so the file looks like it took effect. Measured here: a settings-file session
+completed its task normally and the gateway logged **zero** requests for it. It
+had been talking to Anthropic the whole time.
+
+So the equivalent is an environment variable. For a project you always want
+routed, scope it to that directory with [direnv](https://direnv.net) — an
+`.envrc` in the project root:
 
 ```bash
-scripts/claude-routed "add a health check endpoint"
+export ANTHROPIC_BASE_URL="http://127.0.0.1:8000"   # no /v1 — Claude appends it
+export ANTHROPIC_AUTH_TOKEN="local-gateway"
 ```
 
-**Do not put these in your shell profile.** An `export` there sends *every*
-Claude session on the machine through the gateway — including work you want
-billed to your Anthropic subscription, and including private repositories you
-never meant to route. The wrapper sets them for one process and nothing else:
+Then `claude` behaves normally inside that directory and is untouched everywhere
+else. Without direnv, `scripts/claude-routed` with no arguments opens the same
+interactive session:
 
 ```bash
-ANTHROPIC_BASE_URL="http://127.0.0.1:8000" \
-ANTHROPIC_AUTH_TOKEN="local-gateway" \
-claude
+scripts/claude-routed
 ```
 
-Note there is no `/v1` on that URL — Claude Code appends it.
-
-**A settings file will not work for this.** Putting `ANTHROPIC_BASE_URL` in
-`.claude/settings.json` under `env` is ignored: Claude Code reads that variable
-from the process environment only. The trap is that *other* keys in the same
-file are honoured, so the file looks like it took effect while every request
-still goes straight to Anthropic. Measured here: a settings-file session
-completed its task normally and the gateway logged **zero** requests for it.
+**Do not put those exports in your shell profile.** That sends *every* Claude
+session on the machine through the gateway — including work you want billed to
+your Anthropic subscription, and including private repositories you never meant
+to route anywhere.
 
 Do not set `ANTHROPIC_MODEL` either. Claude Code validates model ids
 client-side and rejects names it does not recognise, so `wormhole-auto` fails
@@ -250,17 +278,21 @@ mid-thought and look like a refusal.
 
 ## Two ways to run it
 
+This is a separate axis from interactive-vs-exec: it is about whether your
+traffic goes *through* the gateway or merely asks it for an opinion.
+
 **Proxy mode** — your tool points at WormHole and every request flows through
 it. You get routing, prompt enhancement, scoring and full cost logging, billed
-per token to whichever provider it picks. This is what `claude-routed` does.
+per token to whichever provider it picks. Everything above is proxy mode: the
+`config.toml` setup, the `.envrc`, `opencode.json`, and `claude-routed`.
 
 **Advisory mode** — WormHole only *picks* the model; your tool then makes the
 call itself, on its own credentials. Nothing but the prompt reaches the gateway.
-This is what `codex-routed` does, and it exists because Codex on a ChatGPT
+Only `codex-routed` works this way, and it exists because Codex on a ChatGPT
 subscription is already paid for — proxying it would move that same work onto
 pay-per-token API billing and cost you more, not less.
 
-|  | Proxy (`claude-routed`) | Advisory (`codex-routed`) |
+|  | Proxy | Advisory (`codex-routed` only) |
 |---|---|---|
 | Billing | per token, to the picked provider | your existing subscription |
 | Chooses model | every turn | once, from the opening task |
@@ -268,30 +300,34 @@ pay-per-token API billing and cost you more, not less.
 | Cost dashboard | full | tier usage only |
 | Traffic through the gateway | all of it | the prompt only |
 
+So `codex-routed` is the odd one out: it is the only way to get routing without
+moving your billing onto API tokens.
+
 ---
 
-## The wrapper scripts
+## Exec mode: one-shot calls from other tools
 
-Both wrappers exist for the same reason: **scope the redirect to one session.**
-Setting `ANTHROPIC_BASE_URL` in your shell profile, or `model_provider` at the
-top of `~/.codex/config.toml`, silently captures *every* session on the machine
-— including work you want billed to a subscription, and including private
-repositories you never intended to route anywhere. The wrappers set what they
-need for one process and leave everything else alone.
+When something *else* is doing the calling — a script, a Makefile, CI, a
+pre-commit hook, another agent — you want one command that runs, prints, and
+exits. That is what the wrappers are for. They also scope the redirect to that
+single process, so nothing they do leaks into your other sessions.
 
-### Codex, advisory mode
+### Codex — `codex-routed --exec`
 
 ```bash
 scripts/codex-routed --exec "rename userCnt to userCount across the repo"
 ```
 
+Runs non-interactively and exits. The same script without `--exec` opens the
+normal Codex TUI, if you want the interactive session on a routed model without
+editing `config.toml`:
+
 ```bash
 scripts/codex-routed "add a health check endpoint"
 ```
 
-The first runs non-interactively and exits — use it in scripts, CI, and
-pre-commit hooks. The second opens the normal Codex TUI. Both print the
-decision to stderr before Codex starts, so you can see what it chose:
+Both print the decision to stderr before Codex starts, so you can see what it
+chose:
 
 ```
 → routed to gpt-5.6-luna: simple rename, a light tier handles it
@@ -313,19 +349,15 @@ export WORMHOLE_LADDER='[
 Only ids your ChatGPT account may use belong there; plain API model ids are
 rejected under subscription auth. Needs `curl` and `jq`.
 
-### Claude Code, proxy mode
+### Claude Code — `claude-routed -p`
 
 ```bash
 scripts/claude-routed -p "add a health check endpoint"
 ```
 
-```bash
-scripts/claude-routed
-```
-
-Again: `-p` is exec mode, bare is the interactive TUI. Everything after the
-script name is passed straight through to `claude`, so your usual flags still
-work:
+`-p` is exec mode; bare is the interactive TUI covered above. Everything after
+the script name is passed straight through to `claude`, so your usual flags
+still work:
 
 ```bash
 scripts/claude-routed -p "fix the failing test" --permission-mode acceptEdits
@@ -334,6 +366,15 @@ scripts/claude-routed -p "fix the failing test" --permission-mode acceptEdits
 Unlike the Codex wrapper this one is a true proxy — every turn is routed,
 enhanced, scored and logged, and it bills per token rather than against your
 Anthropic subscription.
+
+### OpenCode — `opencode run`
+
+OpenCode reads `opencode.json` from the project, so once that file is in place
+(see above) both modes are already routed — no wrapper needed:
+
+```bash
+opencode run "add a health check endpoint"
+```
 
 ### Checking it actually routed
 

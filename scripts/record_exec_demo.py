@@ -374,8 +374,8 @@ def tradeoff_slide(cap):
     d.text((850, 405), "Cheap has a floor", font=F_H2, fill=AMBER)
     d.text((850, 470), "Let it reach for a free tiny model", font=F_BODY, fill=MUTED)
     d.text((850, 508), "and the marks really do drop.", font=F_BODY, fill=MUTED)
-    d.text((850, 552), "One setting stops that.", font=F_SMALL, fill=MUTED)
-    d.text((850, 583), "It is the next slide.", font=F_SMALL, fill=MUTED)
+    d.text((850, 552), "One setting stops that:", font=F_SMALL, fill=MUTED)
+    d.text((850, 583), "MIN_ROUTING_TIER=medium", font=F_MONO_S, fill=ACCENT)
 
     d.text((60, 660), "Nobody graded this by opinion. The code either passes its tests or it does not.",
            font=F_BODY, fill=ACCENT)

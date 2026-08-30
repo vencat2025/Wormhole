@@ -1,9 +1,10 @@
 # WormHole
 
-**Your coding agent doesn't need the most expensive model for every task.**
+**Your harness doesn't need the most expensive model for every task.**
 
-WormHole is a small local gateway that sits between your coding tool and the
-model providers. It looks at each request, picks the cheapest model that can
+WormHole is a small local gateway that sits between your harness and the
+model providers. (*Harness* is the tool you actually type into: Codex CLI,
+Claude Code, OpenCode.) It looks at each request, picks the cheapest model that can
 actually handle it, and gets out of the way.
 
 You keep using Codex CLI or Claude Code exactly as you do now.
@@ -42,7 +43,7 @@ flowchart LR
     B --> C{"Which model<br/>can do this?"}
     C -->|"simple task"| D["cheap model"]
     C -->|"hard task"| E["strong model"]
-    D --> F["Answer / file edits<br/>back to your tool"]
+    D --> F["Answer / file edits<br/>back to your harness"]
     E --> F
     F --> G["Score the result"]
     G -.->|"retrain the router"| C
@@ -103,7 +104,7 @@ You only need one. Cheapest to start with:
 
 | Provider | Where | Notes |
 |---|---|---|
-| **Groq** | [console.groq.com/keys](https://console.groq.com/keys) | Free tier. **Start here** — it can drive coding agents. |
+| **Groq** | [console.groq.com/keys](https://console.groq.com/keys) | Free tier. **Start here** — it can drive a harness. |
 | OpenAI | [platform.openai.com](https://platform.openai.com/api-keys) | Needs billing credits |
 | Google | [aistudio.google.com](https://aistudio.google.com/apikey) | Needs billing credits |
 | Ollama | [ollama.com](https://ollama.com) | Local, free — but see the warning below |
@@ -111,7 +112,7 @@ You only need one. Cheapest to start with:
 Models whose provider has no key are skipped automatically, so an `.env` with
 only `GROQ_API_KEY` set is a perfectly valid setup.
 
-**Ollama alone is not enough for a coding agent.** A local 7B model cannot
+**Ollama alone is not enough for a harness.** A local 7B model cannot
 reliably drive Codex or Claude Code — it degrades to printing JSON as text
 instead of calling tools — so it is excluded from agentic turns by design. Set
 up with only Ollama and your first Codex turn has nothing to route to. The
@@ -151,7 +152,7 @@ always have. Exec is for when something else is doing the calling.
 
 ---
 
-## Interactive mode: point your tool at the gateway
+## Interactive mode: point your harness at the gateway
 
 Configure the tool once and then work normally. Each tool has its own file for
 this — except Claude Code, which needs an environment variable instead, for
@@ -306,12 +307,12 @@ mid-thought and look like a refusal.
 This is a separate axis from interactive-vs-exec: it is about whether your
 traffic goes *through* the gateway or merely asks it for an opinion.
 
-**Proxy mode** — your tool points at WormHole and every request flows through
+**Proxy mode** — your harness points at WormHole and every request flows through
 it. You get routing, prompt enhancement, scoring and full cost logging, billed
 per token to whichever provider it picks. Everything above is proxy mode: the
 `config.toml` setup, the `.envrc`, `opencode.json`, and `claude-routed`.
 
-**Advisory mode** — WormHole only *picks* the model; your tool then makes the
+**Advisory mode** — WormHole only *picks* the model; your harness then makes the
 call itself, on its own credentials. Nothing but the prompt reaches the gateway.
 Only `codex-routed` works this way, and it exists because Codex on a ChatGPT
 subscription is already paid for — proxying it would move that same work onto
@@ -418,7 +419,7 @@ provider directly.
 
 ## Setting a quality floor
 
-The single most important setting if you point a coding agent at this:
+The single most important setting if you point a harness at this:
 
 ```bash
 MIN_ROUTING_TIER=medium   # basic | medium | high | frontier

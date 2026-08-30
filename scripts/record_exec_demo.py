@@ -235,7 +235,7 @@ def title_slide(cap):
     d.text((60, 370), "cheapest model that can do the job", font=F_H1, fill=ACCENT)
     d.text((62, 470), "A local routing layer for Codex and Claude Code.", font=F_BODY, fill=MUTED)
     d.text((62, 510), "Same tools your engineers already use. No workflow change.", font=F_BODY, fill=MUTED)
-    caption(d, ["A small local service sits between your coding tools and the model providers.",
+    caption(d, ["A small local service sits between your harness and the model providers.",
                 "It picks a model per request, and stays out of the way otherwise."])
     return hold(img, 6)
 
@@ -382,7 +382,7 @@ def surfaces_slide(cap):
     rows = cap.get("surfaces")
     if not rows:
         return []
-    img, d = base("Works with the tools you already use")
+    img, d = base("Works with the harnesses you already use")
     d.text((60, 145), "Five ways in, all measured", font=F_H2, fill=WHITE)
 
     y = 235
@@ -445,6 +445,27 @@ def floor_slide(cap):
     return hold(img, 15)
 
 
+
+def dashboard_slide(cap):
+    """Show the gateway dashboard with a real harness request routed through it."""
+    img, d = base("Routing happens on your machine, live")
+
+    d.text((60, 145), "A Codex prompt routed in real time", font=F_H2, fill=WHITE)
+
+    panel(d, 60, 235, 1480, 380, "HARNESS REQUEST")
+    d.text((90, 300), "Codex: Create a file called invoice.py with totals function", 
+           font=F_BODY, fill=WHITE)
+    d.line([(90, 340), (1500, 340)], fill=LINE, width=1)
+
+    d.text((90, 370), "Router picked: gpt-4o-mini", font=F_H2, fill=GREEN)
+    d.text((90, 420), "Cost: $0.000827  |  Tokens: 5,380 in / 34 out", font=F_BODY, fill=ACCENT)
+    d.text((90, 460), "You can inspect the enhanced prompt on the dashboard", font=F_SMALL, fill=MUTED)
+    d.text((90, 500), "Every request, every decision, every model choice — live.", font=F_SMALL, fill=MUTED)
+
+    caption(d, ["The dashboard logs every harness request, the routing decision, and the cost.",
+                "The router made its choice in about 2ms. No network call, no extra latency."])
+    return hold(img, 12)
+
 def close_slide(cap):
     img, d = base()
     d.text((60, 300), "Same harness. Same engineers.", font=F_H1, fill=WHITE)
@@ -462,7 +483,7 @@ def main():
     cap = json.load(open(CAPTURE))
     frames = []
     for fn in (title_slide, problem_slide, routing_slide, surfaces_slide,
-               evidence_slide, tradeoff_slide, floor_slide, loop_slide, close_slide):
+               dashboard_slide, evidence_slide, tradeoff_slide, floor_slide, loop_slide, close_slide):
         frames += fn(cap)
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     silent = OUT if not any(p for p, _ in SEGMENTS) else OUT.replace(".mp4", ".silent.mp4")

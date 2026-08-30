@@ -117,22 +117,29 @@ Models whose provider has no key are skipped automatically, so an
 
 ### Codex CLI
 
-Add to `~/.codex/config.toml`:
+Define the provider in `~/.codex/config.toml`, but **do not** set
+`model_provider` at the top of the file:
 
 ```toml
-model_provider = "wormhole"
-
 [model_providers.wormhole]
 name = "WormHole"
 base_url = "http://127.0.0.1:8000/v1"
 wire_api = "responses"
 ```
 
-Then use Codex normally:
+Select it per invocation instead, so the choice stays scoped to that run:
 
 ```bash
-codex "add a health check endpoint"
+codex -c model_provider="wormhole" "add a health check endpoint"
+codex exec -c model_provider="wormhole" "add a health check endpoint"
 ```
+
+**Why not the top-level line.** On macOS the Codex desktop app reads this same
+file (`CODEX_HOME=~/.codex`), so a top-level `model_provider = "wormhole"`
+redirects the app as well as the CLI — including sessions on a ChatGPT
+subscription, which then bill per token through the gateway instead of against
+the plan you already pay for. If you want that billing preserved, use the
+advisory wrapper below rather than proxying Codex at all.
 
 ### Claude Code
 
@@ -243,25 +250,103 @@ mid-thought and look like a refusal.
 
 ## Two ways to run it
 
-**Proxy mode** (default) — WormHole handles the request, so you get routing,
-prompt enhancement, scoring and full cost logging. Billed per token to whichever
-provider it picks.
+**Proxy mode** — your tool points at WormHole and every request flows through
+it. You get routing, prompt enhancement, scoring and full cost logging, billed
+per token to whichever provider it picks. This is what `claude-routed` does.
 
-**Advisory mode** — WormHole only picks the model, and your tool makes the call
-itself. Useful with a ChatGPT subscription, where per-token billing would cost
-more than the plan you already pay for:
+**Advisory mode** — WormHole only *picks* the model; your tool then makes the
+call itself, on its own credentials. Nothing but the prompt reaches the gateway.
+This is what `codex-routed` does, and it exists because Codex on a ChatGPT
+subscription is already paid for — proxying it would move that same work onto
+pay-per-token API billing and cost you more, not less.
 
-```bash
-scripts/codex-routed "rename userCnt to userCount"
-# → routed to gpt-5.6-luna: simple rename, a light tier handles it
-```
-
-|  | Proxy | Advisory |
+|  | Proxy (`claude-routed`) | Advisory (`codex-routed`) |
 |---|---|---|
-| Billing | per token | your existing subscription |
-| Chooses model | every turn | once per session |
+| Billing | per token, to the picked provider | your existing subscription |
+| Chooses model | every turn | once, from the opening task |
 | Enhancer, scoring, learning loop | yes | no |
 | Cost dashboard | full | tier usage only |
+| Traffic through the gateway | all of it | the prompt only |
+
+---
+
+## The wrapper scripts
+
+Both wrappers exist for the same reason: **scope the redirect to one session.**
+Setting `ANTHROPIC_BASE_URL` in your shell profile, or `model_provider` at the
+top of `~/.codex/config.toml`, silently captures *every* session on the machine
+— including work you want billed to a subscription, and including private
+repositories you never intended to route anywhere. The wrappers set what they
+need for one process and leave everything else alone.
+
+### Codex, advisory mode
+
+```bash
+scripts/codex-routed --exec "rename userCnt to userCount across the repo"
+```
+
+```bash
+scripts/codex-routed "add a health check endpoint"
+```
+
+The first runs non-interactively and exits — use it in scripts, CI, and
+pre-commit hooks. The second opens the normal Codex TUI. Both print the
+decision to stderr before Codex starts, so you can see what it chose:
+
+```
+→ routed to gpt-5.6-luna: simple rename, a light tier handles it
+```
+
+The model is chosen from the **opening task** and then fixed for the whole
+session — the gateway sees one routing request, not one per turn. If the work
+turns out harder than it looked, switch tiers with `/model` inside the TUI.
+
+Point it at a different ladder if your account has other tiers:
+
+```bash
+export WORMHOLE_LADDER='[
+  {"id":"gpt-5.6-luna","description":"light edits"},
+  {"id":"gpt-5.5","description":"architecture and proofs"}
+]'
+```
+
+Only ids your ChatGPT account may use belong there; plain API model ids are
+rejected under subscription auth. Needs `curl` and `jq`.
+
+### Claude Code, proxy mode
+
+```bash
+scripts/claude-routed -p "add a health check endpoint"
+```
+
+```bash
+scripts/claude-routed
+```
+
+Again: `-p` is exec mode, bare is the interactive TUI. Everything after the
+script name is passed straight through to `claude`, so your usual flags still
+work:
+
+```bash
+scripts/claude-routed -p "fix the failing test" --permission-mode acceptEdits
+```
+
+Unlike the Codex wrapper this one is a true proxy — every turn is routed,
+enhanced, scored and logged, and it bills per token rather than against your
+Anthropic subscription.
+
+### Checking it actually routed
+
+The honest test is whether the gateway saw the traffic, not whether the task
+succeeded — a session that quietly bypassed the gateway still works fine, which
+is exactly what makes it easy to miss:
+
+```bash
+curl -s "http://127.0.0.1:8000/api/logs?limit=1" | jq '.summary.total_requests'
+```
+
+Run it before and after. If the number did not move, you were talking to the
+provider directly.
 
 ---
 

@@ -13,8 +13,12 @@
 # ones handling private work. Scope it per invocation instead.
 #
 # Usage:
-#   scripts/claude-routed "task"        # non-interactive
+#   scripts/claude-routed -p "task"     # exec / non-interactive
 #   scripts/claude-routed               # interactive TUI
+#   scripts/claude-routed "task"        # interactive, opening on that task
+#
+# Everything after the script name is passed straight through to claude, so any
+# flag you would normally use still applies.
 set -euo pipefail
 
 GATEWAY="${WORMHOLE_URL:-http://127.0.0.1:8000}"   # no /v1 suffix

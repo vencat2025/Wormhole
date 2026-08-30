@@ -283,15 +283,19 @@ def routing_slide(cap):
         d.text((1050, 265), "MODEL SELECTED", font=F_SMALL, fill=MUTED)
         for i, r in enumerate(routes[:shown]):
             y = 320 + i * 72
-            top = r["model"] == "gpt-5.5"
+            top = r["model"].endswith("-sol")
             d.text((90, y), f"[{r['label']}]", font=F_MONO_S, fill=AMBER if top else MUTED)
             task = r["task"]
             # Keep clear of the model column; an overrun reads as a rendering bug.
             task = task[:57] + "..." if len(task) > 60 else task
             d.text((230, y), task, font=F_MONO_S, fill=WHITE)
             d.text((1050, y), r["model"], font=F_MONO, fill=AMBER if top else GREEN)
+        top = [r["label"] for r in routes if r["model"].endswith("-sol")]
         caption(d, ["Five real requests, routed live. The router reads the task and picks a tier.",
-                    "Only the last two, which involve concurrency and a correctness proof, reach the top tier."])
+                    "The renames and the unit test go to the cheapest reasoning tier; only the concurrency bug reaches the top one."]
+                if top else
+                ["Five real requests, routed live. The router reads the task and picks a tier.",
+                 "The renames and the unit test go to the cheapest reasoning tier, and the harder work climbs from there."])
         frames.extend([img] * (16 if shown else 8))
     img, d = frames[-1].copy(), None
     _, d = base("Live routing decisions")
@@ -449,6 +453,101 @@ def floor_slide(cap):
 
 
 
+def family_slide(cap):
+    """One vendor's own family, and the spread inside it."""
+    fam = cap.get("family")
+    if not fam:
+        return []
+    img, d = base("Not always the expensive one")
+    d.text((60, 145), "Staying inside a single model family", font=F_H2, fill=WHITE)
+
+    panel(d, 60, 225, 1480, 300, "THE 5.6 LADDER, PUBLISHED RATES PER 1K TOKENS")
+    d.text((90, 285), "MODEL", font=F_SMALL, fill=MUTED)
+    d.text((520, 285), "TIER", font=F_SMALL, fill=MUTED)
+    d.text((800, 285), "INPUT", font=F_SMALL, fill=MUTED)
+    d.text((1080, 285), "OUTPUT", font=F_SMALL, fill=MUTED)
+    colours = [GREEN, ACCENT, AMBER]
+    for i, m in enumerate(fam["models"]):
+        y = 340 + i * 58
+        c = colours[i] if i < len(colours) else WHITE
+        d.text((90, y), m["id"], font=F_MONO, fill=c)
+        d.text((520, y), m["tier"], font=F_MONO_S, fill=MUTED)
+        d.text((800, y), f"${m['in']:.4f}", font=F_MONO_S, fill=c)
+        d.text((1080, y), f"${m['out']:.4f}", font=F_MONO_S, fill=c)
+
+    d.text((60, 560), f"The cheapest reasoning tier costs {fam['ratio_in']}x less on input than the top one.",
+           font=F_BODY, fill=WHITE)
+    d.text((60, 600), "Renames and docstrings go to the bottom of the ladder. Migrations and proofs go to the top.",
+           font=F_BODY, fill=MUTED)
+    d.text((60, 650), "Same vendor, same family, same account. Only the tier changes.", font=F_BODY, fill=MUTED)
+    caption(d, ["You do not have to switch vendors to stop overpaying.",
+                "Inside one model family the cheapest reasoning tier costs twenty times less per input token than the top one,",
+                "and most of a working day is renames and docstrings, not migrations."])
+    return hold(img, 15)
+
+
+def api_slide(cap):
+    """Why the top tiers needed real work to reach at all."""
+    img, d = base("Reaching the top tier honestly")
+    d.text((60, 145), "The reasoning tiers refuse tools on the ordinary endpoint", font=F_H2, fill=WHITE)
+
+    panel(d, 60, 225, 1480, 195, "WHAT THE PROVIDER RETURNS")
+    d.text((90, 285), "Function tools with reasoning_effort are not supported", font=F_MONO_S, fill=AMBER)
+    d.text((90, 325), "in /v1/chat/completions. Use /v1/responses, or set", font=F_MONO_S, fill=AMBER)
+    d.text((90, 365), "reasoning_effort to 'none'.", font=F_MONO_S, fill=AMBER)
+
+    panel(d, 60, 445, 720, 235, "THE EASY WAY OUT")
+    d.text((90, 500), "reasoning_effort = none", font=F_MONO_S, fill=MUTED)
+    d.text((90, 550), "Tools work again.", font=F_BODY, fill=MUTED)
+    d.text((90, 592), "The reasoning is switched off.", font=F_BODY, fill=AMBER)
+    d.text((90, 634), "Top-tier price, no longer a top tier.", font=F_SMALL, fill=AMBER)
+
+    panel(d, 820, 445, 720, 235, "WHAT THIS GATEWAY DOES")
+    d.text((850, 500), "translate to /v1/responses", font=F_MONO_S, fill=GREEN)
+    d.text((850, 550), "Tools and full reasoning together.", font=F_BODY, fill=GREEN)
+    d.text((850, 592), "Every harness gains it unchanged.", font=F_BODY, fill=MUTED)
+    d.text((850, 634), "Verified: Codex wrote a file, then tested it.", font=F_SMALL, fill=MUTED)
+
+    caption(d, ["The strongest tiers refuse to use tools on the ordinary endpoint.",
+                "You can buy tool support back by turning the reasoning off, which means paying the top price for a model that no longer reasons.",
+                "So the gateway translates to the endpoint where both work, and every harness gains those models without knowing anything changed."])
+    return hold(img, 16)
+
+
+def tier_slide(cap):
+    """What the local classifier actually predicts, and what it cannot do."""
+    t = cap.get("tiers")
+    if not t:
+        return []
+    img, d = base("The router predicts difficulty, not a model")
+    d.text((60, 145), "Which is why it still works when your fleet changes", font=F_H2, fill=WHITE)
+
+    panel(d, 60, 225, 1480, 200, "HOW A DECISION IS MADE")
+    d.text((90, 285), "prompt", font=F_MONO, fill=MUTED)
+    d.text((260, 285), "->", font=F_MONO, fill=LINE)
+    d.text((330, 285), "local classifier", font=F_MONO, fill=ACCENT)
+    d.text((640, 285), "->", font=F_MONO, fill=LINE)
+    d.text((710, 285), "\"this needs the high tier\"", font=F_MONO, fill=WHITE)
+    d.text((90, 350), "then: the cheapest model your own keys can reach that clears that tier",
+           font=F_BODY, fill=GREEN)
+
+    panel(d, 60, 455, 720, 210, "WHAT THAT BUYS")
+    d.text((90, 515), f"{t['ms']} ms per decision", font=F_H2, fill=GREEN)
+    d.text((90, 575), "on this machine, no network call", font=F_BODY, fill=MUTED)
+    d.text((90, 620), "Add a provider key and the pool widens instantly.", font=F_SMALL, fill=MUTED)
+
+    panel(d, 820, 455, 720, 210, "WHERE IT IS STILL WEAK")
+    d.text((850, 515), "short hard prompts", font=F_H2, fill=AMBER)
+    d.text((850, 575), "under-routed today", font=F_BODY, fill=MUTED)
+    d.text((850, 620), "Your judged traffic is what fixes it. A floor bounds it meanwhile.", font=F_SMALL, fill=MUTED)
+
+    caption(d, ["The classifier predicts how hard the task is, not which model to use.",
+                "Difficulty is a property of the request, so it stays true however your fleet changes,",
+                "and the gateway spends the least money that buys it from the keys you have.",
+                "It is right about the easy work today and still under-rates short hard instructions, which is the honest state of it."])
+    return hold(img, 17)
+
+
 def dashboard_slide(cap):
     """Show the gateway dashboard with a real harness request routed through it."""
     img, d = base("Routing happens on your machine, live")
@@ -466,7 +565,7 @@ def dashboard_slide(cap):
     d.text((90, 500), "Every request, every decision, every model choice — live.", font=F_SMALL, fill=MUTED)
 
     caption(d, ["The dashboard logs every harness request, the routing decision, and the cost.",
-                "The router made its choice in about 2ms. No network call, no extra latency."])
+                "The router made its choice on this machine in under a millisecond. No network call, no extra latency."])
     return hold(img, 12)
 
 def close_slide(cap):
@@ -485,8 +584,9 @@ def main():
         sys.exit(f"No capture at {CAPTURE}.")
     cap = json.load(open(CAPTURE))
     frames = []
-    for fn in (title_slide, problem_slide, routing_slide, surfaces_slide,
-               dashboard_slide, evidence_slide, tradeoff_slide, floor_slide, loop_slide, close_slide):
+    for fn in (title_slide, problem_slide, routing_slide, family_slide, api_slide,
+               tier_slide, surfaces_slide, dashboard_slide, evidence_slide,
+               tradeoff_slide, floor_slide, loop_slide, close_slide):
         frames += fn(cap)
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     silent = OUT if not any(p for p, _ in SEGMENTS) else OUT.replace(".mp4", ".silent.mp4")

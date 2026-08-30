@@ -37,31 +37,31 @@
       "label": "Trivial",
       "task": "rename the variable userCnt to userCount",
       "model": "gpt-5.6-luna",
-      "why": "Renaming a single variable is a trivial edit suitable for the lightest tier."
+      "why": "Renaming a single variable is a simple edit suitable for the lightest tier."
     },
     {
       "label": "Routine",
       "task": "write a unit test for the date parsing helper",
       "model": "gpt-5.6-luna",
-      "why": "A simple unit test for a helper function is a routine coding task suitable for the lightest tier."
+      "why": "Writing a unit test for a single helper function is a simple, single-file task suitable for the lightest tier."
     },
     {
       "label": "Routine",
       "task": "add pagination to the /users endpoint",
       "model": "gpt-5.6-terra",
-      "why": "Adding pagination likely touches multiple parts (controller, service) and requires careful integration, fitting the balanced tier."
+      "why": "Adding pagination likely requires modifying multiple files (e.g., controller, service, and data access) and ensuring correct integration, fitting tier 1's multi-file scope."
     },
     {
       "label": "Complex",
-      "task": "fix the race condition in our connection pool across services",
-      "model": "gpt-5.5",
-      "why": "Fixing a race condition in a connection pool across services involves concurrency and distributed consistency, requiring strong reasoning and design expertise."
+      "task": "fix the race condition in our connection pool across workers",
+      "model": "gpt-5.6-sol",
+      "why": "Fixing a race condition in a connection pool across workers involves concurrency and synchronization complexities requiring strong analysis."
     },
     {
       "label": "Critical",
-      "task": "design a zero-downtime billing migration and prove no double-charge",
-      "model": "gpt-5.5",
-      "why": "Requires system design across services and a correctness proof to ensure no double-charge, which exceeds simple edits"
+      "task": "design a zero-downtime billing migration and prove no double charges",
+      "model": "gpt-5.6-terra",
+      "why": "Router unavailable (RateLimitError); defaulted to a middle tier."
     }
   ],
   "feedback": 30,
@@ -131,5 +131,42 @@
     "after_req": 4,
     "after_ok": true,
     "task": "create a file with one line in it"
+  },
+  "family": {
+    "models": [
+      {
+        "id": "gpt-5.6-luna",
+        "tier": "medium",
+        "in": 0.0002,
+        "out": 0.0012,
+        "responses_api": true
+      },
+      {
+        "id": "gpt-5.6-terra",
+        "tier": "high",
+        "in": 0.002,
+        "out": 0.012,
+        "responses_api": true
+      },
+      {
+        "id": "gpt-5.6-sol",
+        "tier": "frontier",
+        "in": 0.004,
+        "out": 0.02,
+        "responses_api": true
+      }
+    ],
+    "ratio_in": 20,
+    "ratio_out": 17
+  },
+  "tiers": {
+    "classes": [
+      "basic",
+      "frontier",
+      "high",
+      "medium"
+    ],
+    "ms": 0.53,
+    "accuracy": 88.7
   }
 }

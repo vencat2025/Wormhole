@@ -269,12 +269,34 @@ class Settings:
             pricing_verified=False
         ),
         CandidateModelConfig(
+            id="gpt-5.6-luna",
+            name="GPT-5.6 Luna",
+            provider="openai",
+            input_cost_per_1k=0.00150,
+            output_cost_per_1k=0.0120,
+            description="Efficient frontier model for coding, reasoning, and complex tasks.",
+            speed_tier="fast",
+            intelligence_tier="frontier",
+            pricing_verified=False
+        ),
+        CandidateModelConfig(
+            id="gpt-5.6-terra",
+            name="GPT-5.6 Terra",
+            provider="openai",
+            input_cost_per_1k=0.00200,
+            output_cost_per_1k=0.0160,
+            description="Balanced frontier model with strong reasoning and coding capability.",
+            speed_tier="medium",
+            intelligence_tier="frontier",
+            pricing_verified=False
+        ),
+        CandidateModelConfig(
             id="gpt-5.6-sol",
             name="GPT-5.6 Sol",
             provider="openai",
             input_cost_per_1k=0.00250,
             output_cost_per_1k=0.0200,
-            description="Flagship agentic coding model. Chat-completions tool calling is unsupported: see supports_tools.",
+            description="Premium flagship model for advanced reasoning and complex code synthesis.",
             speed_tier="medium",
             intelligence_tier="frontier",
             pricing_verified=False,

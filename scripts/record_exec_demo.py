@@ -332,54 +332,60 @@ def evidence_slide(cap):
 
 
 def loop_slide(cap):
-    img, d = base("It improves with use")
-    d.text((60, 150), "Every completion is scored, and the score trains the router", font=F_H2, fill=WHITE)
-    steps = [("Request", MUTED), ("Route", ACCENT), ("Run", MUTED), ("Score", AMBER), ("Retrain", GREEN)]
+    img, d = base("It gets better as you use it")
+    d.text((60, 165), "Every answer is scored. The scores retrain the router.", font=F_H2, fill=WHITE)
+
+    steps = [("Route", ACCENT), ("Run", MUTED), ("Score", AMBER), ("Learn", GREEN)]
     x = 90
     for i, (label, colour) in enumerate(steps):
-        panel(d, x, 300, 240, 120)
-        d.text((x + 30, 345), label, font=F_H2, fill=colour)
+        panel(d, x, 290, 280, 130)
+        d.text((x + 40, 340), label, font=F_H1, fill=colour)
         if i < len(steps) - 1:
-            d.text((x + 255, 345), "->", font=F_H2, fill=LINE)
-        x += 290
-    d.text((90, 500), f"{cap['feedback']} judged prompts are currently feeding the local router.", font=F_BODY, fill=WHITE)
-    d.text((90, 550), "Routing is a local model on the machine. Prompts do not leave it to decide where to go.", font=F_BODY, fill=MUTED)
-    q = cap.get("quality")
-    if q:
-        d.text((90, 600), f"Quality is measured, not assumed: {q['n']} tasks scored by executing "
-                          f"the benchmark's own tests.", font=F_BODY, fill=AMBER)
-    caption(d, ["Each answer is scored, and those scores become training data for the local router.",
-                "It starts on public benchmarks and gradually learns the work your team actually does."])
-    return hold(img, 13)
+            d.text((x + 295, 340), "->", font=F_H2, fill=LINE)
+        x += 340
 
+    d.text((60, 510), "It starts out knowing public benchmarks.", font=F_BODY, fill=MUTED)
+    d.text((60, 560), "It ends up knowing the work your team actually does.", font=F_BODY, fill=WHITE)
+    d.text((60, 630), "All of it on your machine. Prompts never leave it to decide where to go.", font=F_BODY, fill=GREEN)
+    caption(d, ["Every answer gets scored, and those scores teach the router.",
+                "It starts out knowing public benchmarks and ends up knowing the work your team actually does.",
+                "All of it on your own machine."])
+    return hold(img, 12)
 
 
 def tradeoff_slide(cap):
+    """The payoff, in words rather than fractions.
+
+    This slide used to carry six ratios -- 14 of 24, 20 of 24, 60 of 72, 61 of
+    72, a delta in points, a percentage -- which is the right level of detail
+    for the README and the wrong one for a viewer giving this ninety seconds.
+    The fractions are all still in the repository; what belongs here is what
+    they add up to.
+    """
     q = cap.get("quality")
     if not q:
         return []
-    img, d = base("The trade, measured")
-    d.text((60, 145), "It depends which models you allow", font=F_H2, fill=WHITE)
+    img, d = base("Does it cost you quality?")
 
-    panel(d, 60, 235, 720, 320, "ALLOWING THE FREE LOCAL MODEL")
-    d.text((90, 300), f"routed        {q['weak_routed_solved']} of {q['weak_n']}", font=F_H2, fill=AMBER)
-    d.text((90, 365), f"always strong {q['weak_baseline_solved']} of {q['weak_n']}", font=F_H2, fill=MUTED)
-    d.text((90, 450), f"{q['weak_delta']} points of correctness", font=F_BODY, fill=AMBER)
-    d.text((90, 490), "for a 100% saving. A real loss.", font=F_BODY, fill=MUTED)
+    d.text((60, 175), "Same work. Same result.", font=F_H1, fill=WHITE)
+    d.text((60, 245), "About a twenty-fifth of the price.", font=F_H1, fill=GREEN)
 
-    panel(d, 820, 235, 720, 320, "RESTRICTED TO STRONGER TIERS")
-    d.text((850, 300), f"routed        {q['routed_solved']} of {q['n']}", font=F_H2, fill=GREEN)
-    d.text((850, 365), f"always strong {q['baseline_solved']} of {q['n']}", font=F_H2, fill=MUTED)
-    d.text((850, 450), "one task apart, over three runs", font=F_BODY, fill=GREEN)
-    d.text((850, 490), "for a 96% saving.", font=F_BODY, fill=MUTED)
+    panel(d, 60, 355, 720, 250, "HOW WE KNOW")
+    d.text((90, 415), f"{q['n']} real coding tasks", font=F_H2, fill=WHITE)
+    d.text((90, 480), "Run twice: once routed,", font=F_BODY, fill=MUTED)
+    d.text((90, 520), "once always on the flagship.", font=F_BODY, fill=MUTED)
+    d.text((90, 565), "Marked by running the tests, not by asking a model.", font=F_SMALL, fill=MUTED)
 
-    d.text((60, 600), "Routing did not beat the flagship. It matched it, within noise,", font=F_BODY, fill=WHITE)
-    d.text((60, 640), "and did the same work for about a twenty-fifth of the price.", font=F_BODY, fill=MUTED)
-    d.text((60, 685), f"Correctness is the benchmark's own test suite executed over {q['n']} tasks, not a model's opinion.", font=F_SMALL, fill=MUTED)
-    caption(d, ["The honest question is not whether routing costs quality, but which models you allow.",
-                "Let it use a tiny free model and accuracy really does drop. Restrict it to stronger tiers",
-                "and it matched always-using-the-flagship - one task apart across seventy-two - for a fraction of the cost."])
-    return hold(img, 16)
+    panel(d, 820, 355, 720, 250, "THE CATCH")
+    d.text((850, 415), "Cheap has a floor", font=F_H2, fill=AMBER)
+    d.text((850, 480), "Let it reach for a free tiny", font=F_BODY, fill=MUTED)
+    d.text((850, 520), "model and accuracy does drop.", font=F_BODY, fill=MUTED)
+    d.text((850, 565), "One setting stops that. It is the next slide.", font=F_SMALL, fill=MUTED)
+
+    caption(d, ["Routing did not beat the flagship. It matched it, and cost about a twenty-fifth as much.",
+                "That is measured by running the tasks and checking the answers, not by asking a model for its opinion.",
+                "The catch is that cheap has a floor, and going under it costs you real accuracy."])
+    return hold(img, 15)
 
 
 def surfaces_slide(cap):
@@ -424,33 +430,35 @@ def surfaces_slide(cap):
 
 
 def floor_slide(cap):
-    """The setting that decides whether any of this is usable in practice."""
+    """The one setting a new user has to get right.
+
+    Nineteen-versus-four survives simplification where the benchmark ratios did
+    not, because it is a story rather than a statistic: the agent tried, over
+    and over, and the file was never there.
+    """
     f = cap.get("floor")
     if not f:
         return []
-    img, d = base("The setting that matters most")
-    d.text((60, 145), "Cheap is not the same as capable", font=F_H2, fill=WHITE)
-    d.text((60, 200), f"Same task both times: {f['task']}.", font=F_BODY, fill=MUTED)
+    img, d = base("The one setting to get right")
+    d.text((60, 155), "Cheapest is not the same as capable", font=F_H2, fill=WHITE)
+    d.text((60, 215), f"The same small job both times: {f['task']}.", font=F_BODY, fill=MUTED)
 
-    panel(d, 60, 265, 720, 300, "NO FLOOR")
-    d.text((90, 330), f["before_model"], font=F_H2, fill=AMBER)
-    d.text((90, 400), f"{f['before_req']} requests", font=F_BODY, fill=MUTED)
-    d.text((90, 445), "file never created", font=F_BODY, fill=AMBER)
-    d.text((90, 500), "It called tools correctly the whole time.", font=F_SMALL, fill=MUTED)
+    panel(d, 60, 290, 720, 300, "NO FLOOR SET")
+    d.text((90, 355), f"{f['before_req']} tries", font=F_HUGE, fill=AMBER)
+    d.text((90, 480), "and the file was never created", font=F_BODY, fill=AMBER)
+    d.text((90, 530), "It used the tools correctly the whole time.", font=F_SMALL, fill=MUTED)
 
-    panel(d, 820, 265, 720, 300, "MIN_ROUTING_TIER=MEDIUM")
-    d.text((850, 330), f["after_model"], font=F_H2, fill=GREEN)
-    d.text((850, 400), f"{f['after_req']} requests", font=F_BODY, fill=MUTED)
-    d.text((850, 445), "file created", font=F_BODY, fill=GREEN)
-    d.text((850, 500), "Still a cheap tier. Just not the cheapest.", font=F_SMALL, fill=MUTED)
+    panel(d, 820, 290, 720, 300, "ONE LINE OF CONFIG")
+    d.text((850, 355), "done", font=F_HUGE, fill=GREEN)
+    d.text((850, 480), f"in {f['after_req']} tries, file written", font=F_BODY, fill=GREEN)
+    d.text((850, 530), "Still a cheap model. Just not the cheapest.", font=F_SMALL, fill=MUTED)
 
-    d.text((60, 610), "Advertising tool support is not the same as being able to drive an agentic harness.", font=F_BODY, fill=WHITE)
-    d.text((60, 650), "One setting keeps the tiers that cannot out of the pool entirely.", font=F_BODY, fill=MUTED)
+    d.text((60, 640), "MIN_ROUTING_TIER=medium", font=F_MONO, fill=ACCENT)
+    d.text((60, 690), "Set this before you point an agent at it.", font=F_BODY, fill=MUTED)
     caption(d, ["This is the first thing to set, and the easiest to get wrong.",
-                "The weakest tier benchmarks well on short answers and still cannot run an agent loop.",
-                "A floor costs a little more per request and saves the nineteen that went nowhere."])
-    return hold(img, 15)
-
+                "The very cheapest models answer quiz questions well and still cannot run an agent.",
+                "One line of config keeps them out, and it is the difference between a file and nineteen wasted tries."])
+    return hold(img, 14)
 
 
 def family_slide(cap):
@@ -585,7 +593,7 @@ def main():
     cap = json.load(open(CAPTURE))
     frames = []
     for fn in (title_slide, problem_slide, routing_slide, family_slide, api_slide,
-               tier_slide, surfaces_slide, dashboard_slide, evidence_slide,
+               tier_slide, surfaces_slide, dashboard_slide,
                tradeoff_slide, floor_slide, loop_slide, close_slide):
         frames += fn(cap)
     os.makedirs(os.path.dirname(OUT), exist_ok=True)

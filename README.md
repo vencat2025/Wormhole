@@ -518,7 +518,8 @@ All optional — set in `.env`. See `.env.example` for the full list.
 | `ROUTER_MODE` | `auto` | `slm` (local, instant), `llm` (smarter, ~300ms), `auto` |
 | `ENABLE_ENHANCEMENT` | `true` | Rewrite prompts for weak models (adds ~500ms latency, extra API call) |
 | `ENHANCE_TIERS` | `basic,medium` | Which model tiers get prompt enhancement |
-| `ENABLE_AUTH` | `false` | Require a bearer token on the gateway |
+| `ENABLE_AUTH` | `false` | Require a bearer token — also protects `/api/logs` and the prompt history |
+| `CORS_ORIGINS` | none | Cross-origin access. Leave empty; see the note below |
 | `ENABLE_JUDGING` | `true` | Run LLM-as-judge on every completion (feeds learning loop) |
 | `JUDGE_SAMPLE_RATE` | `1.0` | Fraction of completions to judge (0.0–1.0; 0.1 = judge 10%) |
 
@@ -561,6 +562,14 @@ JUDGE_MODEL=ollama/gemma3:12b
 
 Editing the model list itself — adding a model, changing a price, marking a
 model unsuitable for tool use — happens in `CANDIDATE_MODELS` in `config.py`.
+
+**Leave `CORS_ORIGINS` empty unless you know you need it.** Any page in your
+browser can send requests to `127.0.0.1`, so a gateway that answers them
+cross-origin lets every site you visit read your prompt history. An earlier
+version of this project did exactly that, and it is fixed: cross-origin access
+is off unless you name specific origins. Never put `*` there — the gateway
+warns at startup if you do. [SECURITY.md](SECURITY.md) has the detail, along
+with what to do if a provider key has ever been committed.
 
 ---
 

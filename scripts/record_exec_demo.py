@@ -100,22 +100,22 @@ SEGMENTS = []
 # sounds like a machine reading a config file rather than someone explaining a
 # result. On-screen text is untouched; only the spoken form changes.
 SPOKEN = {
-    "MIN_ROUTING_TIER=medium": "min routing tier set to medium",
-    "MIN_ROUTING_TIER": "min routing tier",
-    "gpt-oss-120b": "the 120B open-source model",
-    "gpt-5-nano": "GPT 5 nano",
-    "gpt-5-mini": "GPT 5 mini",
-    "gpt-5.6-luna": "GPT 5.6 Luna",
-    "gpt-4o-mini": "GPT 4o mini",
-    "gpt-4o": "GPT 4o",
-    "/api/logs": "the logs endpoint",
-    "config.toml": "config dot toml",
-    "opencode.json": "opencode dot json",
-    "claude-routed": "the Claude wrapper",
-    "codex-routed": "the Codex wrapper",
-    "MBPP": "M B P P",
-    "SWE-bench": "swee bench",
-    "SLM": "small language model",
+    "MIN_ROUTING_TIER=medium": "medium tier floor",
+    "MIN_ROUTING_TIER": "routing tier",
+    "gpt-oss-120b": "the 120B model",
+    "gpt-5-nano": "nano",
+    "gpt-5-mini": "mini",
+    "gpt-5.6-luna": "Luna",
+    "gpt-4o-mini": "4o mini",
+    "gpt-4o": "4o",
+    "/api/logs": "the API logs",
+    "config.toml": "config",
+    "opencode.json": "opencode config",
+    "claude-routed": "Claude wrapper",
+    "codex-routed": "Codex wrapper",
+    "MBPP": "MBPP",
+    "SWE-bench": "SWE-bench",
+    "SLM": "local model",
 }
 
 
@@ -148,8 +148,10 @@ def narrate(text):
             voice=VOICE_NAME,
             input=text,
             instructions=(
-                "Read as an engineer explaining a measured result to colleagues: "
-                "even, unhurried, and matter-of-fact. No sales enthusiasm."
+                "Read with genuine excitement about the technical result. You discovered "
+                "something that actually works better than expected. Emphasize the surprising "
+                "parts: routing is cheaper AND faster, same accuracy for a fraction of cost. "
+                "Vary pace and energy — slow for setup, fast for results. This is news."
             ),
         ) as response:
             response.stream_to_file(path)

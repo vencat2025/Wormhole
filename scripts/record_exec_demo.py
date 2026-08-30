@@ -240,6 +240,76 @@ def tradeoff_slide(cap):
     return hold(img, 16)
 
 
+def surfaces_slide(cap):
+    """Every tool that was actually driven through the gateway, and the one
+    that cannot be. The count beside each row is real logged requests, so a
+    reader can reconcile it against /api/logs rather than take it on faith."""
+    rows = cap.get("surfaces")
+    if not rows:
+        return []
+    img, d = base("Works with the tools you already use")
+    d.text((60, 145), "Five ways in, all measured", font=F_H2, fill=WHITE)
+
+    y = 235
+    d.text((90, y), "TOOL", font=F_SMALL, fill=MUTED)
+    d.text((470, y), "HOW IT IS POINTED", font=F_SMALL, fill=MUTED)
+    d.text((870, y), "REQUESTS", font=F_SMALL, fill=MUTED)
+    d.text((1080, y), "ROUTED TO", font=F_SMALL, fill=MUTED)
+    d.line([(90, y + 32), (1540, y + 32)], fill=LINE, width=2)
+
+    y += 58
+    for r in rows:
+        d.text((90, y), r["name"], font=F_BODY, fill=WHITE)
+        d.text((470, y), r["how"], font=F_BODY, fill=MUTED)
+        # Advisory mode never proxies inference, so a zero here is the design
+        # working, not a tool that failed to connect.
+        req = f"+{r['req']}" if r["req"] else "none (advisory)"
+        d.text((870, y), req, font=F_BODY, fill=GREEN if r["req"] else MUTED)
+        d.text((1080, y), r["model"], font=F_BODY, fill=ACCENT)
+        d.text((1450, y), "OK", font=F_BODY, fill=GREEN)
+        y += 52
+
+    nr = cap.get("not_routable")
+    if nr:
+        y += 18
+        d.text((90, y), f"{nr['name']}: not routable", font=F_BODY, fill=AMBER)
+        d.text((90, y + 38), nr["why"], font=F_SMALL, fill=MUTED)
+
+    caption(d, ["Codex, Claude Code and OpenCode were each driven end to end, and each one wrote its file.",
+                "The Codex desktop app reads the same config file as the CLI, so it routes too.",
+                "Claude for Desktop cannot: it is the chat app, and has no API endpoint to redirect."])
+    return hold(img, 16)
+
+
+def floor_slide(cap):
+    """The setting that decides whether any of this is usable in practice."""
+    f = cap.get("floor")
+    if not f:
+        return []
+    img, d = base("The setting that matters most")
+    d.text((60, 145), "Cheap is not the same as capable", font=F_H2, fill=WHITE)
+    d.text((60, 200), f"Same task both times: {f['task']}.", font=F_BODY, fill=MUTED)
+
+    panel(d, 60, 265, 720, 300, "NO FLOOR")
+    d.text((90, 330), f["before_model"], font=F_H2, fill=AMBER)
+    d.text((90, 400), f"{f['before_req']} requests", font=F_BODY, fill=MUTED)
+    d.text((90, 445), "file never created", font=F_BODY, fill=AMBER)
+    d.text((90, 500), "It called tools correctly the whole time.", font=F_SMALL, fill=MUTED)
+
+    panel(d, 820, 265, 720, 300, "MIN_ROUTING_TIER=MEDIUM")
+    d.text((850, 330), f["after_model"], font=F_H2, fill=GREEN)
+    d.text((850, 400), f"{f['after_req']} requests", font=F_BODY, fill=MUTED)
+    d.text((850, 445), "file created", font=F_BODY, fill=GREEN)
+    d.text((850, 500), "Still a cheap tier. Just not the cheapest.", font=F_SMALL, fill=MUTED)
+
+    d.text((60, 610), "Advertising tool support is not the same as being able to drive an agentic harness.", font=F_BODY, fill=WHITE)
+    d.text((60, 650), "One setting keeps the tiers that cannot out of the pool entirely.", font=F_BODY, fill=MUTED)
+    caption(d, ["This is the first thing to set, and the easiest to get wrong.",
+                "The weakest tier benchmarks well on short answers and still cannot run an agent loop.",
+                "A floor costs a little more per request and saves the nineteen that went nowhere."])
+    return hold(img, 15)
+
+
 def close_slide(cap):
     img, d = base()
     d.text((60, 300), "Same harness. Same engineers.", font=F_H1, fill=WHITE)
@@ -256,7 +326,8 @@ def main():
         sys.exit(f"No capture at {CAPTURE}.")
     cap = json.load(open(CAPTURE))
     frames = []
-    for fn in (title_slide, problem_slide, routing_slide, evidence_slide, tradeoff_slide, loop_slide, close_slide):
+    for fn in (title_slide, problem_slide, routing_slide, surfaces_slide,
+               evidence_slide, tradeoff_slide, floor_slide, loop_slide, close_slide):
         frames += fn(cap)
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     wr = imageio_ffmpeg.write_frames(OUT, (W, H), fps=FPS, quality=8)

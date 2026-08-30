@@ -80,5 +80,56 @@
     "weak_routed_pct": 58.3,
     "weak_baseline_pct": 83.3,
     "weak_delta": "-25.0"
+  },
+  "surfaces": [
+    {
+      "name": "Codex CLI",
+      "how": "config.toml",
+      "req": 10,
+      "model": "gpt-oss-120b",
+      "ok": true
+    },
+    {
+      "name": "Codex app",
+      "how": "same config file",
+      "req": 4,
+      "model": "gpt-oss-120b",
+      "ok": true
+    },
+    {
+      "name": "Claude Code CLI",
+      "how": "claude-routed",
+      "req": 4,
+      "model": "gpt-5-mini",
+      "ok": true
+    },
+    {
+      "name": "OpenCode",
+      "how": "opencode.json",
+      "req": 3,
+      "model": "gpt-oss-120b",
+      "ok": true
+    },
+    {
+      "name": "codex-routed",
+      "how": "advisory, one-shot",
+      "req": 0,
+      "model": "gpt-5.6-luna",
+      "ok": true
+    }
+  ],
+  "not_routable": {
+    "name": "Claude for Desktop",
+    "why": "the claude.ai chat app, not an API client -- it has no base URL to point anywhere"
+  },
+  "floor": {
+    "setting": "MIN_ROUTING_TIER=medium",
+    "before_model": "gpt-5-nano",
+    "before_req": 19,
+    "before_ok": false,
+    "after_model": "gpt-5-mini",
+    "after_req": 4,
+    "after_ok": true,
+    "task": "create a file with one line in it"
   }
 }

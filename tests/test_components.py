@@ -148,3 +148,34 @@ async def test_slm_model_suggestion_and_routing():
     # the actual requirement and survives changes to the fleet.
     tier = settings.model_config_for(model2).intelligence_tier
     assert tier in ("high", "frontier"), f"complex prompt routed to {model2} (tier={tier})"
+
+@pytest.mark.asyncio
+async def test_min_routing_tier_excludes_weaker_models():
+    """The floor must hold regardless of what the router would prefer.
+
+    A model can call tools correctly and still be unable to drive an agentic
+    harness, so supports_tools is not a sufficient guard on its own. This is
+    the setting that keeps those tiers out of the pool entirely.
+    """
+    from services.dispatcher import is_model_routable
+
+    original = settings.MIN_ROUTING_TIER
+    try:
+        settings.MIN_ROUTING_TIER = ""
+        assert is_model_routable("gpt-5-nano"), "basic tier should be routable with no floor"
+
+        settings.MIN_ROUTING_TIER = "medium"
+        assert not is_model_routable("gpt-5-nano"), "basic tier must be excluded by a medium floor"
+        assert is_model_routable("gpt-4o-mini"), "medium tier must survive its own floor"
+        assert is_model_routable("gpt-4o"), "frontier tier must survive a medium floor"
+
+        settings.MIN_ROUTING_TIER = "frontier"
+        assert not is_model_routable("gpt-4o-mini")
+        assert is_model_routable("gpt-4o")
+
+        # An unusable floor must not empty the fleet: a typo that silently
+        # blocked every model would take the gateway down rather than degrade.
+        settings.MIN_ROUTING_TIER = "enormous"
+        assert is_model_routable("gpt-4o-mini"), "an unrecognised floor must be ignored, not fatal"
+    finally:
+        settings.MIN_ROUTING_TIER = original

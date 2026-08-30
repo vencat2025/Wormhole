@@ -391,6 +391,36 @@ provider directly.
 
 ---
 
+## Setting a quality floor
+
+The single most important setting if you point a coding agent at this:
+
+```bash
+MIN_ROUTING_TIER=medium   # basic | medium | high | frontier
+```
+
+Nothing below that tier will be chosen, no matter what the router thinks. This
+matters because **advertising tool support is not the same as being able to
+drive an agentic harness.** Routed to `gpt-5-nano` — a tier that calls tools
+correctly and scores fine on short-answer benchmarks — a one-line "create this
+file" task in Claude Code spent 19 requests and never created the file.
+
+`medium` excludes that tier and keeps the cheap models that do hold up. Raise it
+to `high` if you want only serious reasoning tiers in the pool.
+
+You can also restrict by exact model or by vendor, which compose with the floor:
+
+```bash
+ROUTING_MODELS=gpt-4o-mini,gpt-4o    # an explicit ladder, nothing else
+ROUTING_PROVIDERS=openai             # stay inside one vendor
+```
+
+Prefer the floor for ongoing use: an explicit list has to be rewritten every
+time the fleet changes, whereas a floor keeps judging new models on their own
+tier.
+
+---
+
 ## Configuration
 
 All optional — set in `.env`. See `.env.example` for the full list.

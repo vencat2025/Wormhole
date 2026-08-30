@@ -1,3 +1,4 @@
+import logging
 import os
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
@@ -23,6 +24,9 @@ class CandidateModelConfig(BaseModel):
     # ordering), but every dollar figure derived from them is provisional.
     pricing_verified: bool = True
 
+
+# Capability tiers, weakest first. Order is the whole meaning of the values.
+TIER_ORDER = ["basic", "medium", "high", "frontier"]
 
 # Credential each provider needs before any of its models can be reached.
 # Ollama is local and needs none.
@@ -84,6 +88,21 @@ class Settings:
     #   llm  - one cheap model call, ~200-400ms, semantic and far more robust
     #   auto - slm first, falling back to llm only if the classifier is absent
     ROUTER_MODE: str = os.getenv("ROUTER_MODE", "auto").strip().lower()
+
+    # Lowest capability tier the router may choose. Empty means no floor.
+    #
+    # ROUTING_MODELS can already express this, but only by naming every model
+    # you will accept, which has to be rewritten each time the fleet changes.
+    # A floor survives that: it says "nothing weaker than this", and new models
+    # are admitted or excluded on their own tier.
+    #
+    # This exists because nominally-capable is not the same as capable enough.
+    # A model can advertise tool calling, pass a short-answer benchmark, and
+    # still be unable to drive an agentic harness: routed to gpt-5-nano, a
+    # one-line file-creation task in Claude Code spent 19 requests and never
+    # created the file. Set MIN_ROUTING_TIER=medium before pointing a coding
+    # agent at this gateway.
+    MIN_ROUTING_TIER: str = os.getenv("MIN_ROUTING_TIER", "").strip().lower()
 
     # Restrict routing to an explicit set of model ids. Narrower than
     # ROUTING_PROVIDERS and usually what a real policy looks like: a short
@@ -262,6 +281,25 @@ class Settings:
     def should_enhance_for(self, model_id: str) -> bool:
         cfg = self.model_config_for(model_id)
         return bool(cfg) and cfg.intelligence_tier.lower() in self.ENHANCE_TIERS
+
+    def tier_allowed(self, tier: str) -> bool:
+        """Whether a capability tier clears the configured floor."""
+        if not self.MIN_ROUTING_TIER:
+            return True
+        try:
+            floor = TIER_ORDER.index(self.MIN_ROUTING_TIER)
+        except ValueError:
+            # An unrecognised floor must not silently disable the fleet, and
+            # must not silently disable itself either. Ignore it loudly.
+            logging.getLogger("wormhole.config").warning(
+                "MIN_ROUTING_TIER=%r is not one of %s; ignoring the floor.",
+                self.MIN_ROUTING_TIER, ", ".join(TIER_ORDER),
+            )
+            return True
+        try:
+            return TIER_ORDER.index((tier or "").lower()) >= floor
+        except ValueError:
+            return False  # unknown tier cannot be shown to clear a floor
 
     def provider_allowed(self, provider: str) -> bool:
         return not self.ROUTING_PROVIDERS or provider.lower() in self.ROUTING_PROVIDERS

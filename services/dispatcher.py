@@ -564,6 +564,8 @@ def is_model_routable(model_id: str, need_tools: bool = False) -> bool:
         return False
     if not settings.model_allowed(cfg.id):
         return False
+    if not settings.tier_allowed(cfg.intelligence_tier):
+        return False
     if not settings.provider_has_credentials(cfg.provider):
         return False
     if cfg.provider in UNAUTHENTICATED_PROVIDERS:

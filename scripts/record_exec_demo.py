@@ -578,13 +578,22 @@ def dashboard_slide(cap):
 
 def close_slide(cap):
     img, d = base()
-    d.text((60, 300), "Same harness. Same engineers.", font=F_H1, fill=WHITE)
-    d.text((60, 370), "A policy about which model runs what.", font=F_H1, fill=ACCENT)
-    d.text((62, 480), "Runs self-hosted. Works with Codex CLI and Claude Code.", font=F_BODY, fill=MUTED)
-    d.text((62, 520), "Vendor-agnostic, or pinned to one vendor's tiers by policy.", font=F_BODY, fill=MUTED)
+    d.text((60, 255), "Same harness. Same engineers.", font=F_H1, fill=WHITE)
+    d.text((60, 325), "A policy about which model runs what.", font=F_H1, fill=ACCENT)
+    d.text((62, 435), "Runs self-hosted. Works with Codex CLI, Claude Code and OpenCode.", font=F_BODY, fill=MUTED)
+    d.text((62, 475), "Vendor-agnostic, or pinned to one vendor's tiers by policy.", font=F_BODY, fill=MUTED)
+
+    # Name the command rather than claiming reproducibility in the abstract.
+    # An earlier version of this slide said every figure here was reproducible
+    # with one command, which was not true: the quality and cost comparison is,
+    # and the rest of the capture is assembled from separate runs.
+    panel(d, 60, 540, 1480, 130, "CHECK THE MAIN CLAIM YOURSELF")
+    d.text((90, 600), "python scripts/evaluate_routing_quality.py --n 24 --baseline gpt-4o",
+           font=F_MONO, fill=GREEN)
     caption(d, ["Nothing changes for the engineers. What changes is which model quietly answers each request.",
-                "Self-hosted, open source, and every figure here reproducible with one command."])
-    return hold(img, 8)
+                "The cost and quality comparison is one command, and it marks the answers by running the tests.",
+                "Run it on your own fleet and you will get your own number, not this one."])
+    return hold(img, 10)
 
 
 def main():

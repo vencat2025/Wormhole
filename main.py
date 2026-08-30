@@ -1055,8 +1055,8 @@ def get_dashboard():
             let res = await fetch(path, opts);
             if (res.status === 401) {
                 const entered = window.prompt(
-                    'This gateway has ENABLE_AUTH turned on.\n' +
-                    'Enter one of your WORMHOLE_API_KEYS to view the dashboard:');
+                    'This gateway has ENABLE_AUTH on. Enter one of your ' +
+                    'WORMHOLE_API_KEYS to view the dashboard:');
                 if (!entered) return res;
                 sessionStorage.setItem('wormhole_key', entered);
                 opts.headers = Object.assign({}, opts.headers, {'Authorization': 'Bearer ' + entered});

@@ -458,6 +458,22 @@ All optional — set in `.env`. See `.env.example` for the full list.
 | `ROUTER_MODE` | `auto` | `slm` (local, instant), `llm` (smarter, ~300ms), `auto` |
 | `ENHANCE_TIERS` | `basic,medium` | Which model tiers get prompt enhancement |
 | `ENABLE_AUTH` | `false` | Require a bearer token on the gateway |
+| `ENABLE_JUDGING` | `true` | Run LLM-as-judge on every completion (feeds learning loop) |
+| `JUDGE_SAMPLE_RATE` | `1.0` | Fraction of completions to judge (0.0–1.0; 0.1 = judge 10%) |
+
+### Cost vs. Learning Trade-Off
+
+**Routing** is free (local SLM, <2ms). **Judging adds overhead.**
+
+Every completion is scored by the judge model to feed training data back into the
+router. This makes routing smarter over time as your traffic accumulates, but it
+costs ~10–30% extra on top of the routed request cost (async, so doesn't delay
+your response).
+
+If cost matters more than learning:
+- `ENABLE_JUDGING=false` — disable scoring, skip the learning loop
+- `JUDGE_SAMPLE_RATE=0.1` — judge only 10% of traffic
+- `JUDGE_MODEL=ollama/gemma3:12b` — use a local judge (zero cost, slower)
 
 Editing the model list itself — adding a model, changing a price, marking a
 model unsuitable for tool use — happens in `CANDIDATE_MODELS` in `config.py`.

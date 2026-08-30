@@ -234,12 +234,17 @@ async def chat_completions(
     )
 
     # Step 4: Asynchronous LLM-as-a-Judge Auto-Evaluation Task
-    background_tasks.add_task(
-        evaluate_completion,
-        request_id=result["request_id"],
-        enhanced_prompt=enhanced_prompt,
-        completion=result["completion"]
-    )
+    # Judge scores completions and feeds back into router training.
+    # Can be disabled to reduce costs, at the trade-off of losing the learning loop.
+    if settings.ENABLE_JUDGING:
+        import random
+        if random.random() < settings.JUDGE_SAMPLE_RATE:
+            background_tasks.add_task(
+                evaluate_completion,
+                request_id=result["request_id"],
+                enhanced_prompt=enhanced_prompt,
+                completion=result["completion"]
+            )
 
     # Format OpenAI-compatible completion response
     response_payload = {

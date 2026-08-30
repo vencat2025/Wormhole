@@ -71,6 +71,19 @@ class Settings:
         if k.strip()
     ]
 
+    # Judging & Learning Loop Configuration
+    # Judging runs async after every completion, scoring quality on 1-10 scale.
+    # Scores feed back into router training for continuous improvement.
+    # Trade-off: adds 10-30% overhead (extra API calls), but enables learning.
+    # Disable if you want cheapest-possible routing without adaptation.
+    ENABLE_JUDGING: bool = os.getenv("ENABLE_JUDGING", "true").lower() in ("true", "1", "yes")
+
+    # Sample rate for judging (0.0 to 1.0). Only applicable if ENABLE_JUDGING=true.
+    # 1.0 = judge every request (default, full training signal)
+    # 0.1 = judge 10% of requests (90% cost savings, sparser training data)
+    # Use this to trade off between cost and learning speed.
+    JUDGE_SAMPLE_RATE: float = float(os.getenv("JUDGE_SAMPLE_RATE", "1.0"))
+
     # Base URL for locally hosted models. Everything routed through an
     # ollama/ id stays on this machine.
     OLLAMA_BASE_URL: str = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")

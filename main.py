@@ -67,6 +67,24 @@ async def lifespan(app: FastAPI):
         if settings.MIN_ROUTING_TIER:
             logger.info("Quality floor: nothing below '%s' will be chosen.",
                         settings.MIN_ROUTING_TIER)
+
+        # The classifier can only name models it was trained on. Restrict the
+        # fleet to models outside that set and every prediction misses, so each
+        # decision degrades to a tier substitution -- which preserves how hard
+        # the task looked but loses the model-level judgement. Worth saying out
+        # loud, because the symptom is bad routing, not an error.
+        if settings.ROUTER_MODE != "llm":
+            from services.router import _get_local_router_slm
+            slm = _get_local_router_slm()
+            known = {str(c) for c in getattr(slm, "classes_", [])} if slm is not None else set()
+            if known and not (known & set(chat)):
+                logger.warning(
+                    "The local router was trained on a different fleet (%s) and none of "
+                    "those models are reachable now, so every prediction falls back to a "
+                    "tier substitution. Set ROUTER_MODE=llm for judgement on this fleet, "
+                    "or retrain: POST /api/router/retrain.",
+                    ", ".join(sorted(known)[:3]) + ("..." if len(known) > 3 else ""),
+                )
     yield
 
 app = FastAPI(

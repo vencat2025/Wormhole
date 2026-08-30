@@ -290,11 +290,28 @@ export ROUTING_MODELS="gpt-4o-mini,gpt-4o"
 
 `scripts/evaluate_routing_quality.py` measures what a given floor costs or buys.
 
-One model-specific limit: `gpt-5.6-sol` rejects function tools on
-`/v1/chat/completions` ("use the Responses API"), so it is marked
-`supports_tools=False` and is not routed agentic work. It remains available for
-plain chat. `gpt-5-nano`, `gpt-5-mini`, `gpt-5.4`, `gpt-4o` and `gpt-4o-mini`
-all tool-call normally.
+**The 5.6 reasoning tiers need the Responses API, and get it.** All three
+(`gpt-5.6-luna`, `gpt-5.6-terra`, `gpt-5.6-sol`) reject function tools on
+`/v1/chat/completions`:
+
+```
+Function tools with reasoning_effort are not supported for gpt-5.6-sol in
+/v1/chat/completions. To use function tools, use /v1/responses or set
+reasoning_effort to 'none'.
+```
+
+The two ways out are not equivalent. `reasoning_effort='none'` keeps the call
+on chat completions by switching the reasoning off, which is a downgrade
+wearing the model's name — you would be paying the top tier's price for a
+model that no longer reasons. So the gateway sends these three over
+`/v1/responses` instead, where tools and full reasoning coexist, and translates
+the reply back to chat-completions shape (`services/openai_responses.py`).
+Every surface gains them without knowing they work differently: verified
+end-to-end through Codex, which created a file, then wrote and ran its own test
+against it.
+
+`gpt-5-nano`, `gpt-5-mini`, `gpt-5.4`, `gpt-4o` and `gpt-4o-mini` tool-call
+normally on chat completions.
 
 Reasoning models also spend output budget before answering — `gpt-5-nano` used
 1,061 output tokens on a one-line task — so a low `max_tokens` can cut them off
@@ -444,6 +461,51 @@ ROUTING_PROVIDERS=openai             # stay inside one vendor
 Prefer the floor for ongoing use: an explicit list has to be rewritten every
 time the fleet changes, whereas a floor keeps judging new models on their own
 tier.
+
+### Staying inside one model family
+
+Setting the floor high does not mean paying the top price for everything. A
+common policy is "only 5.6, but not always the expensive one":
+
+```bash
+ROUTING_MODELS=gpt-5.6-luna,gpt-5.6-terra,gpt-5.6-sol
+ROUTER_MODE=llm
+```
+
+Every request then lands on a 5.6 reasoning model, and the router picks which
+one. Measured on this ladder:
+
+| Prompt | Routed to |
+|---|---|
+| rename `userCnt` to `userCount` | `luna` |
+| add a docstring to `total()` | `luna` |
+| fix the failing test in `test_invoice.py` | `terra` |
+| make the payment engine idempotent across partial failures | `sol` |
+| prove this sort is O(n log n) and hit that bound | `sol` |
+| zero-downtime migration to shard the orders table | `sol` |
+
+The spread is worth having: `luna` is **$0.0002 / $0.0012** per 1k in/out
+against `sol` at **$0.0040 / $0.0200** — twenty times cheaper on input for the
+renames and docstrings that make up most of a session, with `sol` still there
+for the work that earns it.
+
+**`ROUTER_MODE=llm` is doing real work in that example.** The bundled classifier
+was trained on an older fleet and knows none of the 5.6 ids, so on this ladder
+every prediction misses and falls back to a tier substitution — which keeps how
+hard the task looked but loses the model-level judgement. Measured: the
+classifier rates a zero-downtime sharding migration "medium", and the ladder
+above collapses to `luna` for everything but two prompts. The gateway warns
+about this at startup rather than letting you find it in your bill:
+
+```
+WARNING  The local router was trained on a different fleet (...) and none of
+         those models are reachable now, so every prediction falls back to a
+         tier substitution. Set ROUTER_MODE=llm for judgement on this fleet,
+         or retrain: POST /api/router/retrain.
+```
+
+`llm` costs one cheap call per decision (~300ms) and judges the fleet in front
+of it. Retraining on your own judged traffic gets the sub-2ms path back.
 
 ---
 

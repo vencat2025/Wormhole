@@ -23,6 +23,11 @@ class CandidateModelConfig(BaseModel):
     # ordering, not published prices. Routing is unaffected (it depends on
     # ordering), but every dollar figure derived from them is provisional.
     pricing_verified: bool = True
+    # True means an agentic turn must go out over /v1/responses rather than
+    # /v1/chat/completions. The reasoning tiers reject function tools on chat
+    # completions unless reasoning_effort is 'none', which turns off the very
+    # thing you picked the tier for. See services/openai_responses.py.
+    requires_responses_api: bool = False
 
 
 # Capability tiers, weakest first. Order is the whole meaning of the values.
@@ -234,7 +239,10 @@ class Settings:
         # OpenAI 5-series. These ids were confirmed against /v1/models on a
         # live account; an earlier revision removed them believing they were
         # invented, which was wrong -- what was invented were their benchmark
-        # figures. Rates are placeholders pending the published price list.
+        # figures. Rates below are litellm's published figures, checked against
+        # its pricing map rather than estimated: an earlier revision guessed
+        # them and had luna 7.5x too expensive and gpt-5.4 2x too cheap, which
+        # is exactly the kind of error that silently distorts routing order.
         CandidateModelConfig(
             id="gpt-5-nano",
             name="GPT-5 Nano",
@@ -244,7 +252,7 @@ class Settings:
             description="Smallest 5-series tier for trivial recall, formatting and one-line edits.",
             speed_tier="ultra-fast",
             intelligence_tier="basic",
-            pricing_verified=False
+            pricing_verified=True
         ),
         CandidateModelConfig(
             id="gpt-5-mini",
@@ -255,57 +263,60 @@ class Settings:
             description="Everyday 5-series tier for routine coding, refactors and summarisation.",
             speed_tier="fast",
             intelligence_tier="medium",
-            pricing_verified=False
+            pricing_verified=True
         ),
         CandidateModelConfig(
             id="gpt-5.4",
             name="GPT-5.4",
             provider="openai",
-            input_cost_per_1k=0.00125,
-            output_cost_per_1k=0.0100,
+            input_cost_per_1k=0.00250,
+            output_cost_per_1k=0.0150,
             description="Strong 5-series reasoning tier for multi-file work and non-trivial debugging.",
             speed_tier="medium",
             intelligence_tier="high",
-            pricing_verified=False
+            pricing_verified=True
         ),
         CandidateModelConfig(
             id="gpt-5.6-luna",
             name="GPT-5.6 Luna",
             provider="openai",
-            input_cost_per_1k=0.00150,
-            output_cost_per_1k=0.0120,
-            description="Efficient frontier model for coding, reasoning, and complex tasks.",
+            input_cost_per_1k=0.00020,
+            output_cost_per_1k=0.0012,
+            description="Fastest 5.6 reasoning tier. Everyday agentic coding and refactors.",
             speed_tier="fast",
-            intelligence_tier="frontier",
-            pricing_verified=False
+            intelligence_tier="high",
+            pricing_verified=True,
+            requires_responses_api=True
         ),
         CandidateModelConfig(
             id="gpt-5.6-terra",
             name="GPT-5.6 Terra",
             provider="openai",
             input_cost_per_1k=0.00200,
-            output_cost_per_1k=0.0160,
-            description="Balanced frontier model with strong reasoning and coding capability.",
+            output_cost_per_1k=0.0120,
+            description="Middle 5.6 reasoning tier. Multi-file work and non-trivial debugging.",
             speed_tier="medium",
-            intelligence_tier="frontier",
-            pricing_verified=False
+            intelligence_tier="high",
+            pricing_verified=True,
+            requires_responses_api=True
         ),
         CandidateModelConfig(
             id="gpt-5.6-sol",
             name="GPT-5.6 Sol",
             provider="openai",
-            input_cost_per_1k=0.00250,
+            input_cost_per_1k=0.00400,
             output_cost_per_1k=0.0200,
-            description="Premium flagship model for advanced reasoning and complex code synthesis.",
+            description="Top 5.6 tier. Architecture, proofs, and the hardest agentic work.",
             speed_tier="medium",
             intelligence_tier="frontier",
-            pricing_verified=False,
-            # OpenAI rejects function tools for this model on
-            # /v1/chat/completions with "Function tools with reasoning_effort
-            # are not supported ... use the Responses API". This gateway
-            # dispatches through chat completions, so an agentic turn routed
-            # here fails outright. It remains available for plain chat.
-            supports_tools=False
+            pricing_verified=True,
+            # OpenAI rejects function tools for all three 5.6 tiers on
+            # /v1/chat/completions unless reasoning_effort is 'none' -- which
+            # would buy tool support by switching off the reasoning this tier
+            # is paid for. The gateway sends them over /v1/responses instead,
+            # where tools and full reasoning coexist, so supports_tools stays
+            # True. See requires_responses_api above.
+            requires_responses_api=True
         ),
         CandidateModelConfig(
             id="gpt-4o",

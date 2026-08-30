@@ -4,7 +4,7 @@ import logging
 from typing import Tuple, List, Dict
 import joblib
 import litellm
-from config import settings
+from config import settings, TIER_ORDER
 
 logger = logging.getLogger("wormhole.router")
 
@@ -86,6 +86,53 @@ def _first_routable(model_ids, need_tools: bool) -> str:
     return ""
 
 
+def _substitute_at_tier(predicted_model: str, need_tools: bool) -> str:
+    """Cheapest reachable model no weaker than the one the classifier wanted.
+
+    The classifier only knows the fleet it was trained on. Point the gateway at
+    a different one -- ROUTING_MODELS naming an all-5.6 ladder, say -- and
+    every prediction names a model that is not on it. Falling back to the
+    cheapest reachable model at that point throws the whole decision away:
+    measured with a 5.6-only ladder, a rename and a zero-downtime sharding
+    migration both landed on the cheapest tier, because "not routable" was
+    being treated as "no opinion".
+
+    The prediction still carries the part that matters, which is *how hard the
+    task looked*. That survives as the predicted model's tier, so translate it:
+    keep the tier, spend the least money that buys it on the fleet actually
+    available. Only if nothing reaches that bar does this settle for the
+    strongest thing left.
+    """
+    from services.dispatcher import is_model_routable
+
+    cfg = settings.model_config_for(predicted_model)
+    if not cfg:
+        return ""
+    try:
+        want = TIER_ORDER.index(cfg.intelligence_tier.lower())
+    except ValueError:
+        return ""
+
+    reachable = [
+        m for m in settings.CANDIDATE_MODELS
+        if is_model_routable(m.id, need_tools=need_tools)
+    ]
+    if not reachable:
+        return ""
+
+    def tier_of(m) -> int:
+        try:
+            return TIER_ORDER.index(m.intelligence_tier.lower())
+        except ValueError:
+            return -1
+
+    at_or_above = [m for m in reachable if tier_of(m) >= want]
+    if at_or_above:
+        return min(at_or_above, key=lambda m: (m.input_cost_per_1k, m.output_cost_per_1k)).id
+    # Nothing that strong is reachable; the best available is the honest answer.
+    return max(reachable, key=lambda m: (tier_of(m), -m.input_cost_per_1k)).id
+
+
 async def route_prompt(enhanced_prompt: str, model_name: str = None, has_tools: bool = False) -> Tuple[str, str]:
     """
     Evaluates the enhanced prompt and returns (selected_model_id, reasoning).
@@ -106,6 +153,18 @@ async def route_prompt(enhanced_prompt: str, model_name: str = None, has_tools: 
             if is_model_routable(predicted_model, need_tools=has_tools):
                 return predicted_model, (
                     f"⚡ Local Router SLM (<2ms): selected '{predicted_model}' on benchmark capability matching."
+                )
+
+            # Keep the difficulty the classifier judged, on the fleet that is
+            # actually reachable, before falling back to a fixed model.
+            substitute = _substitute_at_tier(predicted_model, has_tools)
+            if substitute:
+                cfg = settings.model_config_for(predicted_model)
+                tier = cfg.intelligence_tier if cfg else "unknown"
+                return substitute, (
+                    f"⚡ Local Router SLM (<2ms) selected '{predicted_model}', which is not currently routable "
+                    f"(missing/rejected credentials, no tool support, or open circuit); "
+                    f"substituted '{substitute}', the cheapest reachable model at the '{tier}' tier or above."
                 )
 
             substitute = _first_routable(

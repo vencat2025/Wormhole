@@ -9,6 +9,7 @@ import re
 import litellm
 from sqlmodel import Session
 from config import settings, CandidateModelConfig
+from services.openai_responses import aresponses_as_chat
 from db.database import engine
 from db.models import InferenceLog
 
@@ -131,6 +132,18 @@ def in_cooldown(model_id: str) -> bool:
     return True
 
 
+def _use_responses_api(model_id: str, has_tools: bool) -> bool:
+    """Whether this call has to leave over /v1/responses instead of chat.
+
+    Only tool turns need it. The same models accept a plain chat completion
+    without tools, and that path is cheaper to keep on the shared code.
+    """
+    if not has_tools:
+        return False
+    cfg = settings.model_config_for(model_id)
+    return bool(cfg and cfg.requires_responses_api)
+
+
 async def acompletion_with_backoff(attempts: int = 3, **kwargs):
     """Call the model, waiting out per-minute token limits rather than failing.
 
@@ -139,10 +152,20 @@ async def acompletion_with_backoff(attempts: int = 3, **kwargs):
     window as its first. Failing over at that point is useless because the
     sibling models share the same account quota; waiting the advertised
     interval is what actually lets the turn complete.
+
+    This is also the one place every dispatch path funnels through, so it is
+    where the reasoning tiers get switched onto the Responses API. Doing it
+    here rather than in each of the four callers means the chat, Codex and
+    Anthropic surfaces all gain those models without knowing they exist.
     """
+    call = (
+        aresponses_as_chat
+        if _use_responses_api(kwargs.get("model", ""), bool(kwargs.get("tools")))
+        else litellm.acompletion
+    )
     for attempt in range(attempts):
         try:
-            return await litellm.acompletion(**kwargs)
+            return await call(**kwargs)
         except Exception as err:
             wait = _retry_after_seconds(err)
             if wait is None or attempt == attempts - 1 or wait > MAX_RATE_LIMIT_WAIT_SECONDS:

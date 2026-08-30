@@ -595,6 +595,10 @@ def is_model_routable(model_id: str, need_tools: bool = False) -> bool:
         return False
     if need_tools and not cfg.supports_tools:
         return False
+    # Emitting valid function calls is not the same as being able to run an
+    # agent loop; see drives_agents in config.py for what was measured.
+    if need_tools and not cfg.drives_agents:
+        return False
     if in_cooldown(model_id):
         return False
     return not is_circuit_open(model_id)

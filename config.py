@@ -28,6 +28,24 @@ class CandidateModelConfig(BaseModel):
     # completions unless reasoning_effort is 'none', which turns off the very
     # thing you picked the tier for. See services/openai_responses.py.
     requires_responses_api: bool = False
+    # Whether the model can actually sustain a harness's multi-step loop:
+    # explore, decide, act, check, continue. This is a different question from
+    # supports_tools, and the gap between them has now bitten three times.
+    #
+    # supports_tools asks "does it emit valid function calls". A model can do
+    # that perfectly and still be useless to Codex or Claude Code, because the
+    # loop needs it to hold a goal across turns rather than answer one prompt.
+    # Measured in this repository: gpt-5-nano called tools correctly for 19
+    # consecutive requests and never created the file; gpt-oss-20b, asked to
+    # read a folder and summarise it, listed the directory, opened one file and
+    # replied "what would you like me to create?". Neither is a tool-calling
+    # failure and neither is predicted by the capability tier -- gpt-oss-20b is
+    # tier "high" and the cheapest tool-capable model in the default fleet, so
+    # every quality floor short of "frontier" still selects it.
+    #
+    # Set this False only from an observed failure to complete agentic work,
+    # and say in a comment what was observed.
+    drives_agents: bool = True
 
 
 # Capability tiers, weakest first. Order is the whole meaning of the values.
@@ -168,7 +186,12 @@ class Settings:
             output_cost_per_1k=0.0003,
             description="High-speed 20B reasoning model hosted on Groq LPU hardware.",
             speed_tier="ultra-fast",
-            intelligence_tier="high"
+            intelligence_tier="high",
+            # Asked through Codex to read a folder and summarise the code, it
+            # listed the directory, opened one file, then replied "what would
+            # you like me to create or modify?" -- it does not hold the goal
+            # across the loop. Fine for chat, and it stays available for it.
+            drives_agents=False
         ),
         CandidateModelConfig(
             id="groq/qwen/qwen3.6-27b",
@@ -178,7 +201,11 @@ class Settings:
             output_cost_per_1k=0.0004,
             description="Qwen 3.6 27B model hosted on Groq LPU hardware.",
             speed_tier="fast",
-            intelligence_tier="high"
+            intelligence_tier="high",
+            # Through Codex, asked to read a folder and summarise it: it ran
+            # find, opened index.html, and then stopped without answering. It
+            # explores but does not close the loop. Chat is unaffected.
+            drives_agents=False
         ),
         CandidateModelConfig(
             id="ollama/qwen2.5-coder:7b",
@@ -252,7 +279,10 @@ class Settings:
             description="Smallest 5-series tier for trivial recall, formatting and one-line edits.",
             speed_tier="ultra-fast",
             intelligence_tier="basic",
-            pricing_verified=True
+            pricing_verified=True,
+            # Routed a one-line "create this file" task in Claude Code, it spent
+            # 19 requests calling tools correctly and never created the file.
+            drives_agents=False
         ),
         CandidateModelConfig(
             id="gpt-5-mini",

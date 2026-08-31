@@ -6,6 +6,23 @@ from db.database import init_db
 from services.enhancer import enhance_prompt
 from services.router import route_prompt
 from services.dispatcher import dispatch_inference, calculate_cost
+
+
+# A test that needs a model it can actually reach should say so, and skip when
+# there is none. Without this a contributor's first `pytest` on a fresh clone
+# reports two failures that are about their missing .env rather than about
+# their change, and CI on a public repository -- which has no keys, and must
+# not be given any, because a fork's pull request can read them -- can never go
+# green.
+def _any_provider_configured() -> bool:
+    from config import PROVIDER_KEY_ENV
+    return any(settings.provider_has_credentials(p) for p in PROVIDER_KEY_ENV)
+
+
+needs_provider = pytest.mark.skipif(
+    not _any_provider_configured(),
+    reason="no provider credentials configured; set one key in .env to run this",
+)
 from services.judge import evaluate_completion
 from services.dataset import export_router_dataset, export_enhancer_dataset
 
@@ -129,6 +146,7 @@ app = Flask(__name__)
     assert any("app.py" in c for c in cmds)
     assert any("templates/index.html" in c for c in cmds)
 
+@needs_provider
 @pytest.mark.asyncio
 async def test_slm_model_suggestion_and_routing():
     import json
@@ -149,6 +167,7 @@ async def test_slm_model_suggestion_and_routing():
     tier = settings.model_config_for(model2).intelligence_tier
     assert tier in ("high", "frontier"), f"complex prompt routed to {model2} (tier={tier})"
 
+@needs_provider
 @pytest.mark.asyncio
 async def test_min_routing_tier_excludes_weaker_models():
     """The floor must hold regardless of what the router would prefer.

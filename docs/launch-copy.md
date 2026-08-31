@@ -36,12 +36,18 @@ sends it to the tier that can actually do the job.
 
 Real turns from one of our sessions, pinned to the top model:
 
-rename a variable → ran on the cheapest tier, 19.5x less
-add a docstring → ran on the cheapest tier, 19.5x less
+rename a variable → dropped a tier, cost half as much
+add a docstring → dropped a tier, cost half as much
 make it safe under concurrent mutation, prove no double counting, add tests →
-climbed to a stronger model on its own
+kept the top model
 
-Nobody chose any of that. The session cost $0.11 instead of $0.44.
+Nobody chose any of that. The session cost $0.31 instead of $0.43.
+
+That is a modest saving and it is the real one. We had a much larger number
+until we checked where our training data came from, found part of it was
+generated rather than collected, and rebuilt on real benchmark data only. The
+router got worse and the saving got smaller. We would rather publish the
+smaller number than one we cannot stand behind.
 
 It runs on your machine, so prompts never leave it to be routed. Every decision
 is logged with the model that was asked for beside the model that ran, so
@@ -113,15 +119,22 @@ The gateway cannot tell the two apart, and does not need to.
 Here is a real Codex session with the model pinned to `gpt-5.6-sol`, the
 strongest tier. These rows come from the gateway's log, not from a projection.
 
-A variable rename ran on `gpt-5.6-luna`, the cheapest reasoning tier, at
-roughly a twentieth of the cost. Adding a docstring did the same. Then this
-prompt: make the file safe under concurrent mutation of the list, prove the
-total cannot double count, and add tests that demonstrate the race is gone.
+A variable rename ran on `gpt-5.6-terra`, one tier down, at half the cost.
+Adding a docstring did the same. Then this prompt: make the file safe under
+concurrent mutation of the list, prove the total cannot double count, and add
+tests that demonstrate the race is gone.
 
-That one climbed to `gpt-5.6-terra` on its own. It snapshotted the list, wrote
-threaded regression tests, ran them, and they passed.
+That one kept `gpt-5.6-sol`. It snapshotted the list, wrote threaded regression
+tests, ran them, and they passed.
 
-Nobody chose any of it. The session cost $0.11 rather than $0.44.
+Nobody chose any of it. The session cost $0.31 rather than $0.43.
+
+A 1.4x saving is not a headline, and it is the number we can defend. We had a
+much bigger one a week ago. Checking where the router's training data came from
+showed that part of it was written by us rather than collected, and rebuilding
+on real benchmark data only made the classifier worse and the saving smaller.
+The full table of what we tried, including the attempt that failed, is in the
+README.
 
 The escalation matters to us as much as the saving. A router that only ever
 routes down is a cost cut wearing a technical disguise, and the first time it
@@ -129,11 +142,22 @@ sends a migration to a small model it has cost more than it saved.
 
 ### What it does not do
 
-The classifier is honest about being a classifier. It gets the easy end right
-and it still under rates short hard instructions, because every hard example in
-its training data is a long bug report and nothing in it resembles a terse
-imperative sentence. Your own judged traffic is what closes that, and the
-learning loop exists for exactly that reason.
+The classifier is honest about being a classifier. On seven short instructions
+it gets three right: it over routes renames and under routes a sharding
+migration, so its mistakes cost money in one direction and quality in the
+other. The cause is coverage. Every example in its training data is a bug
+report, a maths word problem or a coding exercise, and none of that is the
+register people type at a harness.
+
+We tried to fix that with real data and failed. Public commit subjects are
+exactly that register, and the diff shipped with each one is a difficulty
+signal, so we collected six hundred of them across eight Python projects.
+Routing got worse, because a one line idea that happens to touch three files
+reads as a large change. The script is in the repository, switched off. The
+labelling is what needs solving, not the source.
+
+Your own judged traffic is what closes this, and the learning loop exists for
+that reason.
 
 We also removed the headline number this project used to advertise. Re
 measuring it with the providers' real token counts, rather than an estimate,

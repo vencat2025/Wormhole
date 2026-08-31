@@ -6,11 +6,19 @@ before opening anything — they are deliberately modest.
 
 ## Before you open a PR
 
-Run the tests. They hit real providers, so you need at least one key in `.env`:
+Run the tests:
 
 ```bash
 pytest tests/ -q
 ```
+
+Most of them need no credentials. The few that need a model they can actually
+reach skip themselves when `.env` has no provider key, so a clean clone gives
+16 passed / 3 skipped, and CI runs that way too. Add one key and you get the
+full 18.
+
+CI deliberately has no secrets. A pull request from a fork can run workflow
+code, so any key available to CI is a key handed to anyone who opens a PR.
 
 If you changed routing, run the quality benchmark too, and **paste the output
 in the PR**. It executes MBPP's own assertions, so it is a measurement rather

@@ -1,0 +1,29 @@
+name: tests
+
+# No secrets are configured for this workflow, deliberately. A pull request
+# from a fork can run workflow code, so any key available here is a key
+# published to anyone who opens a PR. The tests that need a provider skip
+# themselves instead; see needs_provider in tests/test_components.py.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run the suite
+        run: pytest tests/ -q
+      - name: Check the gateway imports and starts
+        run: python -c "import main; print('gateway imports cleanly')"

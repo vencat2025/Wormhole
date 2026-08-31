@@ -279,37 +279,53 @@ def problem_slide(cap):
 
 
 def pinned_slide(cap):
-    """The whole product, in one table of real turns."""
+    """The whole product, in one table of real turns.
+
+    An earlier version showed the table without showing where the decision was
+    made, so it read as if Codex had changed its own mind. The path across the
+    top is the point: the harness still asks for the model it was pinned to,
+    and WormHole is what answers with a different one.
+    """
     pin = cap.get("pinned")
     if not pin:
         return []
     img, d = base("So we moved the decision")
-    d.text((60, 148), f"Codex pinned to {pin['requested']}. Nothing else changed.", font=F_H2, fill=WHITE)
+    d.text((60, 140), f"Codex still pinned to {pin['requested']}. WormHole decides per prompt.",
+           font=F_H2, fill=WHITE)
 
-    panel(d, 60, 225, 1480, 330, "REAL TURNS FROM ONE SESSION, FROM THE GATEWAY'S OWN LOG")
-    d.text((90, 285), "WHAT WAS TYPED", font=F_SMALL, fill=MUTED)
-    d.text((880, 285), "ASKED FOR", font=F_SMALL, fill=MUTED)
-    d.text((1130, 285), "WHAT RAN", font=F_SMALL, fill=MUTED)
-    d.text((1410, 285), "COST", font=F_SMALL, fill=MUTED)
+    # The path, so it is obvious what is doing the deciding.
+    panel(d, 60, 205, 1480, 95)
+    d.text((100, 240), "CODEX", font=F_MONO, fill=MUTED)
+    d.text((235, 240), "asks for sol", font=F_SMALL, fill=MUTED)
+    d.text((400, 238), "->", font=F_H2, fill=LINE)
+    d.text((460, 234), "WORMHOLE", font=F_H2, fill=ACCENT)
+    d.text((680, 240), "reads the prompt and picks the tier, on your machine", font=F_SMALL, fill=MUTED)
+    d.text((1250, 238), "->", font=F_H2, fill=LINE)
+    d.text((1310, 240), "THE MODEL", font=F_MONO_S, fill=GREEN)
+
+    panel(d, 60, 330, 1480, 285, "WHAT WORMHOLE CHOSE, FROM ITS OWN LOG")
+    d.text((90, 385), "WHAT WAS TYPED", font=F_SMALL, fill=MUTED)
+    d.text((880, 385), "CODEX ASKED", font=F_SMALL, fill=MUTED)
+    d.text((1110, 385), "WORMHOLE SENT IT TO", font=F_SMALL, fill=MUTED)
+    d.text((1370, 385), "COST", font=F_SMALL, fill=MUTED)
     for i, t in enumerate(pin["tasks"][:4]):
-        y = 340 + i * 52
+        y = 435 + i * 44
         up = t["served"].endswith("terra") or t["served"].endswith("sol")
         col = AMBER if up else GREEN
-        task = t["prompt"][:44] + ("..." if len(t["prompt"]) > 44 else "")
+        task = t["prompt"][:42] + ("..." if len(t["prompt"]) > 42 else "")
         d.text((90, y), task, font=F_MONO_S, fill=WHITE)
         d.text((880, y), "sol", font=F_MONO_S, fill=MUTED)
-        d.text((1130, y), t["served"].replace("gpt-5.6-", ""), font=F_MONO, fill=col)
-        d.text((1410, y), f"{t['ratio']}x less", font=F_MONO_S, fill=col)
+        d.text((1110, y), t["served"].replace("gpt-5.6-", ""), font=F_MONO, fill=col)
+        d.text((1370, y), f"{t['ratio']}x less", font=F_MONO_S, fill=col)
 
-    d.text((60, 585), "The easy work quietly went to the cheapest tier.", font=F_BODY, fill=GREEN)
-    d.text((60, 628), "The concurrency task climbed on its own, without anyone being asked.", font=F_BODY, fill=AMBER)
-    d.text((60, 685),
-           f"Session total: ${pin['total_paid']:.2f} instead of ${pin['total_would']:.2f}. "
-           f"{pin['total_ratio']}x, with the hard task still getting a serious model.",
+    d.text((60, 638), "The easy work went to the cheapest tier. The concurrency task climbed on its own.",
            font=F_BODY, fill=WHITE)
-    caption(d, ["Here is the same session with Codex pinned to the top model, which is what a developer would actually set.",
-                "The renames and the docstring went to the cheapest tier and cost about a twentieth as much.",
-                "The concurrency task climbed to a stronger one by itself. Nobody was asked to choose, and the session cost a quarter of what it would have."])
+    d.text((60, 680),
+           f"Session total: ${pin['total_paid']:.2f} instead of ${pin['total_would']:.2f}, "
+           f"and nobody was asked to choose.", font=F_BODY, fill=GREEN)
+    caption(d, ["Codex is still pinned to the top model here. Nothing about the setup changed.",
+                "WormHole sits between the harness and the provider and reads each prompt on your machine.",
+                "The renames went to the cheapest tier, the concurrency task climbed by itself, and the session cost a quarter as much."])
     return hold(img, 19)
 
 
@@ -373,25 +389,40 @@ def evidence_slide(cap):
 
 
 def loop_slide(cap):
-    img, d = base("It gets better as you use it")
-    d.text((60, 165), "Every answer is scored. The scores retrain the router.", font=F_H2, fill=WHITE)
+    """How the router learns, which is the part that makes it yours."""
+    img, d = base("It learns from how the work turned out")
+    d.text((60, 140), "Every completion is scored, and the score is the training signal", font=F_H2, fill=WHITE)
 
-    steps = [("Route", ACCENT), ("Run", MUTED), ("Score", AMBER), ("Learn", GREEN)]
+    steps = [("Route", ACCENT), ("Run", MUTED), ("Score", AMBER), ("Retrain", GREEN)]
     x = 90
     for i, (label, colour) in enumerate(steps):
-        panel(d, x, 290, 280, 130)
-        d.text((x + 40, 340), label, font=F_H1, fill=colour)
+        panel(d, x, 210, 270, 100)
+        d.text((x + 40, 245), label, font=F_H2, fill=colour)
         if i < len(steps) - 1:
-            d.text((x + 295, 340), "->", font=F_H2, fill=LINE)
-        x += 340
+            d.text((x + 285, 245), "->", font=F_H2, fill=LINE)
+        x += 330
 
-    d.text((60, 510), "It starts out knowing public benchmarks.", font=F_BODY, fill=MUTED)
-    d.text((60, 560), "It ends up knowing the work your team actually does.", font=F_BODY, fill=WHITE)
-    d.text((60, 630), "All of it on your machine. Prompts never leave it to decide where to go.", font=F_BODY, fill=GREEN)
-    caption(d, ["Every answer gets scored, and those scores teach the router.",
-                "It starts out knowing public benchmarks and ends up knowing the work your team actually does.",
-                "All of it on your own machine."])
-    return hold(img, 12)
+    panel(d, 60, 350, 720, 265, "WHAT A SCORE ACTUALLY TELLS YOU")
+    d.text((90, 405), "A cheap model did the job well", font=F_BODY, fill=GREEN)
+    d.text((90, 443), "-> that task really was easy", font=F_SMALL, fill=MUTED)
+    d.text((90, 495), "A model fell short", font=F_BODY, fill=AMBER)
+    d.text((90, 533), "-> that task needed more than it got", font=F_SMALL, fill=MUTED)
+    d.text((90, 578), "Both become labels for the local router.", font=F_SMALL, fill=MUTED)
+
+    panel(d, 820, 350, 720, 265, "WHY IT GETS BETTER FOR YOU")
+    d.text((850, 405), "It ships knowing public benchmarks", font=F_BODY, fill=MUTED)
+    d.text((850, 450), "and nothing about your codebase.", font=F_BODY, fill=MUTED)
+    d.text((850, 510), "Your judged traffic is what teaches it", font=F_BODY, fill=GREEN)
+    d.text((850, 548), "which of your prompts are actually hard.", font=F_BODY, fill=GREEN)
+    d.text((850, 592), "Retraining is a local command. No key needed.", font=F_SMALL, fill=MUTED)
+
+    d.text((60, 665), "The judge, the classifier and the log all stay on the machine.", font=F_BODY, fill=WHITE)
+    caption(d, ["Every answer gets scored, and the score is what teaches the router.",
+                "A cheap model doing the job well is evidence the task really was easy.",
+                "A model falling short is evidence it needed more than it got. Both become training labels.",
+                "It ships knowing public benchmarks and nothing about your codebase, so your own",
+                "traffic teaches it which of your prompts are hard. All of it on your machine."])
+    return hold(img, 18)
 
 
 def tradeoff_slide(cap):
@@ -633,22 +664,14 @@ def dashboard_slide(cap):
 
 def close_slide(cap):
     img, d = base()
-    d.text((60, 255), "Same harness. Same engineers.", font=F_H1, fill=WHITE)
-    d.text((60, 325), "A policy about which model runs what.", font=F_H1, fill=ACCENT)
-    d.text((62, 435), "Runs self-hosted. Works with Codex CLI, Claude Code and OpenCode.", font=F_BODY, fill=MUTED)
-    d.text((62, 475), "Vendor-agnostic, or pinned to one vendor's tiers by policy.", font=F_BODY, fill=MUTED)
-
-    # Name the command rather than claiming reproducibility in the abstract.
-    # An earlier version of this slide said every figure here was reproducible
-    # with one command, which was not true: the quality and cost comparison is,
-    # and the rest of the capture is assembled from separate runs.
-    panel(d, 60, 540, 1480, 130, "CHECK THE MAIN CLAIM YOURSELF")
-    d.text((90, 600), "python scripts/evaluate_routing_quality.py --n 24 --baseline gpt-4o",
-           font=F_MONO, fill=GREEN)
+    d.text((60, 275), "Same harness. Same engineers.", font=F_H1, fill=WHITE)
+    d.text((60, 345), "The model choice made per prompt.", font=F_H1, fill=ACCENT)
+    d.text((62, 460), "Runs on your machine. Works with Codex CLI, Claude Code and OpenCode.", font=F_BODY, fill=MUTED)
+    d.text((62, 505), "Prompts never leave it to be routed.", font=F_BODY, fill=MUTED)
+    d.text((62, 550), "Open source, Apache 2.0.", font=F_BODY, fill=MUTED)
     caption(d, ["Nothing changes for the engineers. What changes is which model quietly answers each request.",
-                "The cost and quality comparison is one command, and it marks the answers by running the tests.",
-                "Run it on your own fleet and you will get your own number, not this one."])
-    return hold(img, 10)
+                "It runs on your own machine, it is open source, and we would rather hear where the routing got it wrong than that it worked."])
+    return hold(img, 11)
 
 
 def main():
@@ -660,8 +683,7 @@ def main():
     # session that shows it solved, where it shows up, what it costs, how you
     # audit it, and what it cannot do.
     for fn in (title_slide, problem_slide, pinned_slide, surfaces_slide,
-               family_slide, dashboard_slide, floor_slide, tradeoff_slide,
-               loop_slide, close_slide):
+               family_slide, dashboard_slide, loop_slide, close_slide):
         frames += fn(cap)
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     silent = OUT if not any(p for p, _ in SEGMENTS) else OUT.replace(".mp4", ".silent.mp4")

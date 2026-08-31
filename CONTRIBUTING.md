@@ -4,7 +4,23 @@ Thanks for looking. This is a side project maintained in spare time, so please
 read the [maintenance expectations](SECURITY.md#maintenance-expectations)
 before opening anything — they are deliberately modest.
 
-## Before you open a PR
+## Pull requests are limited to collaborators right now
+
+Please read this before writing a patch, so you do not find out at the end.
+
+Pull request creation is restricted while the routing work settles. Cloning,
+forking and running it are all open; only sending a PR back is not.
+
+**Please open an issue instead, and the most valuable one is a routing case we
+got wrong.** The classifier's known weakness is short imperative prompts, and a
+real example of it sending the wrong tier is worth more to this project than
+almost any patch. There is a
+[template](.github/ISSUE_TEMPLATE/routing_went_wrong.md) for exactly that.
+
+If you have a fix you would rather send as code, say so in the issue and we
+will work out how to get it in.
+
+## When PRs open up, before you open one
 
 Run the tests:
 

@@ -1,3 +1,10 @@
+<!--
+Pull request creation is currently limited to collaborators. If you are
+reading this as an outside contributor, please open an issue instead:
+a routing case we got wrong is the most useful thing you can send us.
+See CONTRIBUTING.md.
+-->
+
 ## What this changes
 
 <!-- One or two sentences. -->

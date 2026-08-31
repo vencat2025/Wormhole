@@ -483,34 +483,60 @@ tier.
 
 ### Staying inside one model family
 
-Setting the floor high does not mean paying the top price for everything. A
-common policy is "only 5.6, but not always the expensive one":
+This is the setup to start with if you want routing that actually works for a
+coding agent, and it is the one verified end to end through Codex:
 
 ```bash
 ROUTING_MODELS=gpt-5.6-luna,gpt-5.6-terra,gpt-5.6-sol
-ROUTER_MODE=llm
+MIN_ROUTING_TIER=
 ```
 
-Every request then lands on a 5.6 reasoning model, and the router picks which
-one. Measured on this ladder:
+Every request lands on a 5.6 reasoning model, so nothing in the pool is too
+weak to drive a harness, and the router decides which rung. Run through Codex
+against the same small repository, with the model each request was served by
+taken from the gateway's own log:
 
-| Prompt | Routed to |
-|---|---|
-| rename `userCnt` to `userCount` | `luna` |
-| add a docstring to `total()` | `luna` |
-| fix the failing test in `test_invoice.py` | `terra` |
-| make the payment engine idempotent across partial failures | `sol` |
-| prove this sort is O(n log n) and hit that bound | `sol` |
-| zero-downtime migration to shard the orders table | `sol` |
+| What was asked | Served by | Outcome |
+|---|---|---|
+| rename a local variable | `luna` | renamed it, then verified the file still ran |
+| read the folder and summarise the code | `luna` | explored, then summarised both files correctly |
+| make it safe under concurrent mutation, prove no double-counting, add tests | `terra` | snapshotted the list, wrote threaded race tests, ran them, 2 passed |
 
-The spread is worth having: `luna` is **$0.0002 / $0.0012** per 1k in/out
-against `sol` at **$0.0040 / $0.0200** — twenty times cheaper on input for the
-renames and docstrings that make up most of a session, with `sol` still there
-for the work that earns it.
+The spread is the point: `luna` is **$0.0002 / $0.0012** per 1k in/out against
+`sol` at **$0.0040 / $0.0200**. Twenty times cheaper on input for the renames
+and file-reading that fill most of a session, with the heavier rungs there when
+the work earns them.
 
-That table was produced with `ROUTER_MODE=llm`. The local classifier gets the
-cheap end of it right and still under-routes the hard end — see
-[what the router can and cannot do](#what-the-router-can-and-cannot-do).
+**Why a whole-family ladder rather than the cheapest models you can find.**
+Every model on this ladder can complete agentic work, so an under-route costs
+you a little quality rather than a dead session. That is not true of the cheap
+end of the general fleet — see below.
+
+### Not every cheap model can drive an agent
+
+`supports_tools` asks whether a model emits valid function calls. Whether it
+can hold a goal across a harness's explore-decide-act loop is a different
+question, and the answer is not predicted by price or by capability tier.
+
+The same request — *read this folder and summarise the code* — through Codex:
+
+| Model | Tier | What happened |
+|---|---|---|
+| `gpt-oss-20b` | high | listed the directory, opened one file, asked "what would you like me to create?" |
+| `qwen3.6-27b` | high | ran `find`, opened a file, then stopped without answering |
+| `gpt-5-nano` | basic | *(earlier, in Claude Code)* 19 requests calling tools correctly, file never created |
+| `gpt-5.6-luna` | medium | explored and summarised correctly |
+| `gpt-oss-120b` | frontier | explored and summarised correctly |
+
+Two of those failures are tier `high`, and `gpt-oss-20b` was the cheapest
+tool-capable model in the default fleet — so a correctly-set
+`MIN_ROUTING_TIER=medium` did not exclude it. A quality floor cannot help here,
+because the thing that fails is not a tier.
+
+Models observed failing this way carry `drives_agents=False` in `config.py` and
+are excluded from any turn that carries tools. They stay available, and cheap,
+for ordinary chat. If you find another, set the flag and say in the comment
+what you saw.
 
 ---
 

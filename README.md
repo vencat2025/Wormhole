@@ -1,13 +1,15 @@
 # WormHole
 
-**Your engineers picked the best model. Of course they did.**
+**Choosing a model well means knowing how hard a prompt is, and you do not know
+that until it has been answered.**
 
-Every organisation trying to control model spend eventually asks its engineers
-to use the cheaper model when they can. It does not work, and not because
-people are careless: **you cannot tell how hard a prompt is until it has been
-answered.** Guessing low risks a wrong answer and a wasted turn. Guessing high
-always works. So everyone pins the strongest model and never revisits it, which
-is the rational choice and also the expensive one.
+Most teams paying for AI arrive at the same sensible position: use the
+expensive model where it earns its price, something cheaper where it does not.
+It is good advice and it is hard to act on. Guess low and the cheaper model
+might produce something subtly wrong, costing you the turn. Guess high and it
+works, every time. So most of us pin the strongest model and stop thinking
+about it, which is the right call with the information available and also the
+expensive one.
 
 WormHole is a small local gateway that makes the choice per request instead.
 Your harness — Codex CLI, Claude Code, OpenCode — stays pinned to whatever it

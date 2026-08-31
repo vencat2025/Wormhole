@@ -239,43 +239,43 @@ def title_slide(cap):
     d.text((62, 445), "So every rename now costs what an architecture review costs.", font=F_BODY, fill=MUTED)
     d.text((62, 490), "This routes each request to the right tier without asking them to.", font=F_BODY, fill=MUTED)
     caption(d, ["Give a developer a list of models and they will pick the best one, every time.",
-                "That is the rational choice, and it is why model spend does not come down."])
+                "That is the right call with the information they have, and it is why the number stays where it is."])
     return hold(img, 7)
 
 
 def problem_slide(cap):
-    """The policy that does not work, and why."""
-    img, d = base("Why model budgets do not hold")
-    d.text((60, 150), "The usual fix asks the wrong person", font=F_H2, fill=WHITE)
+    """Why the choice is hard, without blaming anyone for finding it hard."""
+    img, d = base("The choice is hard to make in advance")
+    d.text((60, 150), "Choosing well means knowing something you do not know yet", font=F_H2, fill=WHITE)
 
-    panel(d, 60, 235, 720, 400, "WHAT ORGANISATIONS TRY")
+    panel(d, 60, 235, 720, 400, "THE SENSIBLE ADVICE")
     for i, t in enumerate([
-        "\"Only use the top model",
-        " when you really need it.\"",
+        "\"Use the expensive model",
+        " where it earns its price.\"",
         "",
-        "Guidance in a wiki.",
-        "A quota. A dashboard.",
-        "A quarterly reminder.",
+        "Good advice. Most teams",
+        "arrive at it, and most",
+        "engineers try to follow it.",
     ]):
         d.text((90, 300 + i * 48), t, font=F_BODY, fill=WHITE if i < 2 else MUTED)
 
-    panel(d, 820, 235, 720, 400, "WHY IT DOES NOT WORK")
+    panel(d, 820, 235, 720, 400, "WHY IT IS HARD TO FOLLOW")
     for i, t in enumerate([
-        "Nobody knows which prompt",
-        "is hard until it is answered.",
+        "You cannot tell how hard a",
+        "prompt is until it is answered.",
         "",
-        "Guessing low risks a wrong",
-        "answer. Guessing high always",
-        "works. So everyone guesses high.",
+        "Guess low and you might lose",
+        "the turn. Guess high and it",
+        "works, every time.",
     ]):
         d.text((850, 300 + i * 48), t, font=F_BODY, fill=AMBER if i < 2 else MUTED)
 
-    d.text((60, 675), "The decision is being asked of the one person who cannot make it in advance.",
+    d.text((60, 675), "So pinning the strongest model is the right call with the information available.",
            font=F_BODY, fill=WHITE)
-    caption(d, ["Every organisation trying to control model spend asks its engineers to choose the cheaper model when they can.",
-                "It does not work, and not because people are careless.",
-                "You cannot tell how hard a prompt is until it has been answered, and guessing high always works. So everyone guesses high."])
-    return hold(img, 16)
+    caption(d, ["Most teams paying for AI arrive at the same sensible position: use the expensive model where it earns its price.",
+                "It is good advice and it is hard to act on, because how hard a task is turns out to be a property of the answer, and you do not have the answer yet.",
+                "Guess low and you might lose the turn. Guess high and it works. So pinning the strongest model is the right call with what you know."])
+    return hold(img, 17)
 
 
 def pinned_slide(cap):
@@ -283,7 +283,7 @@ def pinned_slide(cap):
     pin = cap.get("pinned")
     if not pin:
         return []
-    img, d = base("So stop asking them")
+    img, d = base("So we moved the decision")
     d.text((60, 148), f"Codex pinned to {pin['requested']}. Nothing else changed.", font=F_H2, fill=WHITE)
 
     panel(d, 60, 225, 1480, 330, "REAL TURNS FROM ONE SESSION, FROM THE GATEWAY'S OWN LOG")

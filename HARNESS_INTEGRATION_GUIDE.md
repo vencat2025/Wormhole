@@ -2,14 +2,11 @@
 
 This guide explains how to connect your existing AI coding tools, agents, and custom harnesses (**Claude Code**, **OpenAI Codex**, **Cursor IDE**, **Aider CLI**, **Continue.dev**) directly to **WormHole** so your development LLM traffic is routed to cheaper models automatically.
 
-Measured over 16 requests logged after token measurement was corrected
-(`python scripts/measure_savings.py` reproduces this from your own `wormhole.db`):
-89,710 input and 2,223 output tokens cost **$0.01** on the models actually
-selected, against **$0.25** for those same token counts priced at GPT-4o rates,
-a **94%** reduction. Token counts are provider-reported and rates come from
-litellm's maintained pricing map. The GPT-4o baseline is a counterfactual, not
-an observed bill, and this sample is the author's own development traffic, not
-a claim about any other workload.
+What it saves depends on your fleet, your prompts and where you set the floor,
+so there is no headline figure here. `python scripts/measure_savings.py` reads
+your own `wormhole.db` and tells you what actually happened on your traffic,
+and `scripts/evaluate_routing_quality.py` runs a routed and a fixed-model arm
+over the same tasks if you want the quality side too.
 
 ---
 

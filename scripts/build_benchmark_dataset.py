@@ -172,6 +172,17 @@ def label_from_solve_rate(rate: float, costs: Dict[str, float]) -> str:
     return min(costs, key=costs.get)
 
 
+def load_commit_prompts() -> List[Dict[str, Any]]:
+    """Commit subjects with a scope-derived tier. See fetch_commit_prompts.py."""
+    path = os.path.join(DATA_DIR, "benchmark_cache", "commit_prompts.json")
+    if not os.path.exists(path):
+        print("  (no commit prompts cached; run scripts/fetch_commit_prompts.py "
+              "to add the imperative register)")
+        return []
+    with open(path) as f:
+        return json.load(f)
+
+
 def load_measured_difficulty() -> List[Dict[str, Any]]:
     """Real coding tasks whose difficulty was measured, not guessed.
 
@@ -243,8 +254,15 @@ def build_dataset(num_samples: int = 2000, seed: int = 42) -> List[Dict[str, Any
 
     measured = load_measured_difficulty()
     rng.shuffle(measured)
+
+    # Real engineering instructions, in the register people actually type at a
+    # harness. Benchmark prose does not cover it: see scripts/fetch_commit_prompts.py.
+    commits = load_commit_prompts()
+    rng.shuffle(commits)
+
     print(f"Real benchmark prompts available: {len(real_pool)}")
     print(f"Tasks with measured difficulty:   {len(measured)}")
+    print(f"Commit-subject instructions:      {len(commits)}")
 
     if not real_pool and not measured:
         raise SystemExit(
@@ -264,6 +282,17 @@ def build_dataset(num_samples: int = 2000, seed: int = 42) -> List[Dict[str, Any
             "expected_pass_rate": m["solve_rate"],
             "tier": tier_from_solve_rate(m["solve_rate"]),
             "label_source": "measured_solve_rate",
+        })
+
+    for c in commits:
+        dataset.append({
+            "benchmark": c["benchmark"],
+            "prompt": c["prompt"],
+            "difficulty": {"basic": "easy", "medium": "medium",
+                           "high": "hard", "frontier": "hard"}[c["tier"]],
+            "expected_pass_rate": None,
+            "tier": c["tier"],
+            "label_source": c["label_source"],
         })
 
     for benchmark, prompt in real_pool:

@@ -185,39 +185,31 @@
     "tasks": [
       {
         "prompt": "rename the variable t to running_total in cart.py",
-        "served": "gpt-5.6-luna",
-        "turns": 3,
-        "paid": 0.003352,
-        "would": 0.065524,
-        "ratio": 19.5
+        "served": "gpt-5.6-terra",
+        "turns": 8,
+        "paid": 0.088986,
+        "would": 0.174392,
+        "ratio": 2.0
       },
       {
         "prompt": "add a docstring to the total function in cart.py",
-        "served": "gpt-5.6-luna",
+        "served": "gpt-5.6-terra",
         "turns": 4,
-        "paid": 0.004712,
-        "would": 0.09176,
-        "ratio": 19.5
-      },
-      {
-        "prompt": "rename the variable t to running_total in cart.py",
-        "served": "gpt-5.6-luna",
-        "turns": 4,
-        "paid": 0.004741,
-        "would": 0.092416,
-        "ratio": 19.5
+        "paid": 0.044488,
+        "would": 0.086984,
+        "ratio": 2.0
       },
       {
         "prompt": "Make cart.py safe under concurrent mutation of the items list, prove t",
-        "served": "gpt-5.6-terra",
-        "turns": 6,
-        "paid": 0.101472,
-        "would": 0.191672,
-        "ratio": 1.9
+        "served": "gpt-5.6-sol",
+        "turns": 5,
+        "paid": 0.171824,
+        "would": 0.171824,
+        "ratio": 1.0
       }
     ],
-    "total_paid": 0.114277,
-    "total_would": 0.441372,
-    "total_ratio": 3.9
+    "total_paid": 0.305298,
+    "total_would": 0.4332,
+    "total_ratio": 1.4
   }
 }

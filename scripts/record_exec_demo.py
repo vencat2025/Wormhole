@@ -316,16 +316,18 @@ def pinned_slide(cap):
         d.text((90, y), task, font=F_MONO_S, fill=WHITE)
         d.text((880, y), "sol", font=F_MONO_S, fill=MUTED)
         d.text((1110, y), t["served"].replace("gpt-5.6-", ""), font=F_MONO, fill=col)
-        d.text((1370, y), f"{t['ratio']}x less", font=F_MONO_S, fill=col)
+        label = "kept the top model" if t["ratio"] < 1.05 else f"{t['ratio']}x less"
+        d.text((1370, y), label, font=F_MONO_S, fill=col)
 
-    d.text((60, 638), "The easy work went to the cheapest tier. The concurrency task climbed on its own.",
+    d.text((60, 638), "The routine work dropped a tier. The concurrency task held on to the top model.",
            font=F_BODY, fill=WHITE)
     d.text((60, 680),
            f"Session total: ${pin['total_paid']:.2f} instead of ${pin['total_would']:.2f}, "
            f"and nobody was asked to choose.", font=F_BODY, fill=GREEN)
     caption(d, ["Codex is still pinned to the top model here. Nothing about the setup changed.",
                 "WormHole sits between the harness and the provider and reads each prompt on your machine.",
-                "The renames went to the cheapest tier, the concurrency task climbed by itself, and the session cost a quarter as much."])
+                "The routine edits dropped a tier and cost half as much. The concurrency task kept the top model, which is the half that matters:",
+                "a router that only ever routes down is a cost cut wearing a technical disguise."])
     return hold(img, 19)
 
 

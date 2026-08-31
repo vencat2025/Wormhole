@@ -21,13 +21,19 @@ taken from the gateway's own log:
 
 | What was typed | Asked for | What ran | Cost |
 |---|---|---|---|
-| rename the variable `t` to `running_total` | `sol` | **`luna`** | 19.5x less |
-| add a docstring to the `total` function | `sol` | **`luna`** | 19.5x less |
-| make it safe under concurrent mutation, prove no double-counting, add tests | `sol` | **`terra`** | 1.9x less |
+| rename the variable `t` to `running_total` | `sol` | **`terra`** | 2.0x less |
+| add a docstring to the `total` function | `sol` | **`terra`** | 2.0x less |
+| make it safe under concurrent mutation, prove no double-counting, add tests | `sol` | **`sol`** | kept the top model |
 
-Nobody was asked to choose. The easy work went to the cheapest tier that could
-do it, the concurrency task climbed on its own, and that session cost **$0.11
-instead of $0.44**.
+Nobody was asked to choose. The routine edits dropped a tier, the concurrency
+task held on to the strongest model, and the session cost **$0.31 instead of
+$0.43**.
+
+That is a modest saving, and it is the real one. An earlier version of this
+README showed 19.5x on the same prompts, measured with a classifier trained on
+data that turned out to be partly fabricated. Replacing it with real benchmark
+data cost accuracy, and the honest number is the smaller one. See [what the
+router can and cannot do](#what-the-router-can-and-cannot-do).
 
 ![A Codex session pinned to the top model, with cheaper models actually serving the easy turns](docs/wormhole_highlight.gif)
 
@@ -709,14 +715,38 @@ Read that as a statement about the training data, not a promise about your
 prompts. Scoring well against benchmark text is not the same as judging the
 sentences you type at a harness, which is the next paragraph.
 
-**Where it is weak, measured.** Held-out benchmark accuracy is not the same as
-accuracy on what you type at a harness. On seven short instructions the local
-classifier put the three easy ones (`rename`, `add a docstring`, `write a
-regex`) on the cheapest tier correctly, and under-routed the hard ones — it
-rates "design a zero-downtime migration to shard the orders table" as *medium*.
-The cause is coverage, not labelling: every hard example in the bootstrap is a
-multi-paragraph bug report or a maths problem, and nothing in it is a short
-imperative sentence that happens to be hard.
+**Where it is weak, measured.** Held-out accuracy is not the same as accuracy on
+what you type at a harness. On seven short instructions the classifier gets
+three right. It over-routes renames to the middle tier and under-routes a
+sharding migration to it, so the errors cost money in one direction and quality
+in the other.
+
+The cause is coverage. Every example in the bootstrap is a multi-paragraph bug
+report, a maths word problem or a short coding exercise. None of it is the
+register people actually type: a terse imperative sentence.
+
+**We tried to fix that with real data and it did not work.** Public commit
+subjects are exactly that register, and the diff shipped with each one is a
+measurable difficulty signal, so `scripts/fetch_commit_prompts.py` collects 652
+of them across eight mature Python projects. Adding them made routing worse —
+2 of 7 with the full scope range, 1 of 7 using only the unambiguous ends —
+because a one-line idea that happens to touch three files reads as a large
+change, and the classifier learned that ordinary engineering sentences are hard
+work. The script is still here and off by default; the labelling is what needs
+solving, not the source.
+
+For the record, everything measured on the same seven cases:
+
+| Bootstrap | Held-out accuracy | Cases correct |
+|---|---|---|
+| Partly fabricated templates *(removed)* | 89% | 4 of 7 |
+| Real benchmarks, class-weighted *(shipped)* | 75% | 3 of 7 |
+| Real benchmarks, unweighted | 79% | 1 of 7 |
+| Plus commit subjects, full scope range | 68% | 2 of 7 |
+| Plus commit subjects, unambiguous ends only | 77% | 1 of 7 |
+
+The fabricated rows scored best, which is the trap: templates are easy to fit
+and easy to route, and neither property survives contact with real prompts.
 
 This is the gap your own traffic closes, and it is the reason the learning loop
 exists. Until it does, `MIN_ROUTING_TIER` is the guard that matters: it bounds

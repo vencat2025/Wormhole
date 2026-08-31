@@ -9,37 +9,28 @@ Figures come from the gateway's own log during a real Codex session.
 
 ## LinkedIn post
 
-Arul and I built a small gateway that picks the model for each prompt, so
-nobody has to guess.
+Short on purpose: it exists to get someone into the article. Paste the article
+URL over the placeholder once LinkedIn gives you one.
 
-The problem is one we kept hitting ourselves. AI spend adds up, and the
-sensible advice is to use the expensive model only where it earns its price.
-We have both given that advice and both failed to follow it.
+---
 
-It is hard to follow for a real reason. You cannot tell how hard a prompt is
-until it has been answered. Guess low and you might lose the turn to a subtly
-wrong answer. Guess high and it always works. So everyone pins the strongest
-model and stops thinking about it, which is the right call with the information
-available.
+Arul Iyyavoo and I built this together in our own time.
 
-So we moved the decision. Your Codex or Claude Code stays pinned to whatever it
-is pinned to, and nothing about how you work changes. A classifier on your own
-laptop reads each prompt in under a millisecond, with no network call, and
-sends it to the tier that can do the job.
+You cannot tell how hard a prompt is until it has been answered. Guess low and
+you might lose the turn to a subtly wrong answer. Guess high and it always
+works. So we all pin the strongest model and stop thinking about it, which is
+the right call with what you know, and also the expensive one.
 
-One of our sessions, pinned to the top model:
+WormHole moves that decision. Your Codex or Claude Code stays pinned to
+whatever it is pinned to. A classifier on your own laptop reads each prompt in
+under a millisecond, with no network call, and picks the tier.
 
-· rename a variable → dropped a tier
-· add a docstring → dropped a tier
-· make it thread-safe, prove no double counting, add tests → kept the top model
+One of our sessions, pinned to the top model: a rename dropped a tier, a
+docstring dropped a tier, and "make it thread-safe and prove no double
+counting" kept the top model. Nobody chose any of that.
 
-Nobody chose any of that. The escalation matters as much as the saving: a
-router that only ever routes down is a cost cut in disguise.
-
-It runs on your machine, so prompts never leave it to be routed. Every decision
-is logged with the model that was asked for beside the model that ran.
-
-Open source, Apache 2.0. If you try it, tell us where the routing got it wrong.
+How it works: [ARTICLE URL]
+Code: https://github.com/vencat2025/Wormhole
 
 ---
 
@@ -47,7 +38,7 @@ Open source, Apache 2.0. If you try it, tell us where the routing got it wrong.
 
 ### Choosing a model means knowing something you cannot know yet
 
-Arul and I built a local routing gateway in our own time. Here is the problem
+Arul Iyyavoo and I built this together in our own time. Here is the problem
 that led us there.
 
 Most teams paying for AI reach the same sensible position: use the expensive
@@ -81,10 +72,10 @@ millisecond with no network call, and the request goes to the cheapest model
 that clears that bar.
 
 This shows up in two places and the same fix covers both. The first is anything
-automated calling `codex exec` — a script, a CI job, a pre-commit hook, another
-agent — where whoever wrote it pinned a model on the day they wrote it and
-nobody has revisited that line since. The second is a person who set a strong
-model in their config once and moved on.
+automated calling `codex exec`: a script, a CI job, a pre-commit hook, another
+agent. Whoever wrote it pinned a model on the day they wrote it, and nobody has
+revisited that line since. The second is a person who set a strong model in
+their config once and moved on.
 
 The gateway cannot tell the two apart, and does not need to.
 
@@ -104,7 +95,7 @@ Nobody chose any of it.
 ### What it does not do yet
 
 The classifier gets the easy end right and still misjudges some short, hard
-instructions — every example in its training data is a bug report or a coding
+instructions. Every example in its training data is a bug report or a coding
 exercise, and none of it is the terse imperative sentence people actually type.
 `MIN_ROUTING_TIER` bounds how far wrong that can go, and the scores from your
 own traffic are what improve it.
@@ -119,5 +110,7 @@ On your laptop. Routing is a local classifier, so prompts do not leave the
 machine to be routed. The log is a local SQLite file, and every decision records
 the model that was asked for beside the model that ran.
 
-Open source, Apache 2.0, built in our own time. If you try it, what we would
-most like to hear is where the routing was wrong.
+Open source, Apache 2.0, built in our own time:
+https://github.com/vencat2025/Wormhole
+
+If you try it, what we would most like to hear is where the routing was wrong.

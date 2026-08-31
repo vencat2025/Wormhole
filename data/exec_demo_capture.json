@@ -168,5 +168,56 @@
     ],
     "ms": 0.53,
     "accuracy": 88.7
+  },
+  "downgrade": {
+    "requested": "gpt-5.6-sol",
+    "served": "gpt-5.6-luna",
+    "turns": 3,
+    "paid": 0.003352,
+    "would_have_paid": 0.065524,
+    "ratio": 19.5,
+    "in_tokens": 14481,
+    "out_tokens": 380,
+    "task": "rename the variable t to running_total in cart.py"
+  },
+  "pinned": {
+    "requested": "gpt-5.6-sol",
+    "tasks": [
+      {
+        "prompt": "rename the variable t to running_total in cart.py",
+        "served": "gpt-5.6-luna",
+        "turns": 3,
+        "paid": 0.003352,
+        "would": 0.065524,
+        "ratio": 19.5
+      },
+      {
+        "prompt": "add a docstring to the total function in cart.py",
+        "served": "gpt-5.6-luna",
+        "turns": 4,
+        "paid": 0.004712,
+        "would": 0.09176,
+        "ratio": 19.5
+      },
+      {
+        "prompt": "rename the variable t to running_total in cart.py",
+        "served": "gpt-5.6-luna",
+        "turns": 4,
+        "paid": 0.004741,
+        "would": 0.092416,
+        "ratio": 19.5
+      },
+      {
+        "prompt": "Make cart.py safe under concurrent mutation of the items list, prove t",
+        "served": "gpt-5.6-terra",
+        "turns": 6,
+        "paid": 0.101472,
+        "would": 0.191672,
+        "ratio": 1.9
+      }
+    ],
+    "total_paid": 0.114277,
+    "total_would": 0.441372,
+    "total_ratio": 3.9
   }
 }

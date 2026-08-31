@@ -266,6 +266,7 @@ async def chat_completions(
     if request.stream:
         return StreamingResponse(
             dispatch_streaming_inference(
+                requested_model=request.model,
                 original_prompt=original_prompt,
                 enhanced_prompt=enhanced_prompt,
                 enhancer_model=settings.ENHANCER_MODEL if settings.should_enhance_for(selected_model) else "bypassed",
@@ -587,6 +588,7 @@ async def openai_responses_endpoint(
     if raw_request.get("stream", True):
         return StreamingResponse(
             dispatch_responses_streaming_inference(
+                requested_model=raw_request.get("model"),
                 original_prompt=original_prompt,
                 enhanced_prompt=enhanced_prompt,
                 enhancer_model=settings.ENHANCER_MODEL if settings.should_enhance_for(selected_model) else "bypassed",
@@ -693,6 +695,7 @@ async def anthropic_messages_endpoint(
     if raw_request.get("stream"):
         return StreamingResponse(
             dispatch_anthropic_streaming_inference(
+                requested_model=raw_request.get("model"),
                 original_prompt=original_prompt,
                 enhanced_prompt=enhanced_prompt,
                 enhancer_model=settings.ENHANCER_MODEL if settings.should_enhance_for(selected_model) else "bypassed",
@@ -1010,13 +1013,14 @@ def get_dashboard():
                 <th>⏰ Timestamp</th>
                 <th>📥 Original Prompt</th>
                 <th>✨ Enhanced Prompt (Model 1 SLM)</th>
-                <th>🎯 Target Model & Reasoning</th>
+                <th>🙋 Model Asked For</th>
+                <th>🎯 Model That Ran &amp; Reasoning</th>
                 <th>Tokens / Cost</th>
                 <th>Judge Score</th>
             </tr>
         </thead>
         <tbody id="logs-body">
-            <tr><td colspan="7" style="text-align: center; color: var(--text-sub);">Loading inference logs...</td></tr>
+            <tr><td colspan="8" style="text-align: center; color: var(--text-sub);">Loading inference logs...</td></tr>
         </tbody>
     </table>
 
@@ -1109,7 +1113,7 @@ def get_dashboard():
 
                 const tbody = document.getElementById('logs-body');
                 if (data.logs.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: var(--text-sub);">No requests logged yet. Send chat completion calls to <code>/v1/chat/completions</code>.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; color: var(--text-sub);">No requests logged yet. Send chat completion calls to <code>/v1/chat/completions</code>.</td></tr>';
                     return;
                 }
 
@@ -1117,6 +1121,21 @@ def get_dashboard():
                     const origPrompt = escapeHtml(log.original_prompt || '');
                     const enhPrompt = escapeHtml(log.enhanced_prompt || '');
                     const selModel = escapeHtml(log.selected_model || '');
+                    // What the harness pinned in its own config, kept in its
+                    // own column beside what actually ran. Side by side is the
+                    // whole point: the developer chose one model and a cheaper
+                    // one did the work, which is invisible if you only log the
+                    // second.
+                    const reqModel = escapeHtml(log.requested_model || '');
+                    const routedDown = reqModel && log.selected_model &&
+                                       !log.selected_model.endsWith(reqModel);
+                    const askedCell = !reqModel
+                        ? `<span style="color:var(--text-sub);font-size:11px;">&mdash;</span>`
+                        : routedDown
+                            ? `<span class="tag" style="background:rgba(251,191,36,0.12);color:#fbbf24;border:1px solid rgba(251,191,36,0.3);">${reqModel}</span>
+                               <div style="font-size:10px;color:var(--text-sub);margin-top:4px;">routed to something cheaper</div>`
+                            : `<span class="tag tag-model">${reqModel}</span>
+                               <div style="font-size:10px;color:var(--text-sub);margin-top:4px;">kept</div>`;
                     const reason = escapeHtml(log.router_reasoning || 'N/A');
                     const reqId = escapeHtml(log.request_id || '');
                     const dateStr = formatLocalDate(log.created_at);
@@ -1133,6 +1152,7 @@ def get_dashboard():
                                 <div style="margin-top: 6px; padding: 8px; background: rgba(0,0,0,0.4); border-radius: 6px; white-space: pre-wrap; font-family: monospace; font-size: 11px; color: #e0e7ff; max-width: 320px; max-height: 150px; overflow-y: auto;">${enhPrompt}</div>
                             </details>
                         </td>
+                        <td>${askedCell}</td>
                         <td>
                             <span class="tag tag-model">${selModel}</span>
                             <div style="font-size: 11px; color: var(--text-sub); margin-top: 4px; max-width: 220px;">${reason}</div>

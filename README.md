@@ -1,22 +1,33 @@
 # WormHole
 
-**An experiment: does your harness really need the most expensive model for
-every task?**
+**Your engineers picked the best model. Of course they did.**
 
-WormHole is a small local gateway that sits between your harness and the
-model providers. (*Harness* is the tool you actually type into: Codex CLI,
-Claude Code, OpenCode.) It looks at each request, picks a cheaper model when it
-judges the task does not need the expensive one, and gets out of the way.
+Every organisation trying to control model spend eventually asks its engineers
+to use the cheaper model when they can. It does not work, and not because
+people are careless: **you cannot tell how hard a prompt is until it has been
+answered.** Guessing low risks a wrong answer and a wasted turn. Guessing high
+always works. So everyone pins the strongest model and never revisits it, which
+is the rational choice and also the expensive one.
 
-You keep using Codex CLI or Claude Code exactly as you do now.
+WormHole is a small local gateway that makes the choice per request instead.
+Your harness — Codex CLI, Claude Code, OpenCode — stays pinned to whatever it
+is pinned to. The gateway reads each prompt and sends it to the tier that can
+actually do it.
 
-**This does not come with a headline number, deliberately.** Whether it saves
-you anything, and whether that costs you quality, depends on your fleet, your
-prompts and where you set the floor. There is a script here that measures both
-on your own setup, and that answer is worth more than one of ours. Try it and
-see what you get.
+Real turns from one Codex session with the model pinned to `gpt-5.6-sol`,
+taken from the gateway's own log:
 
-![Five tasks routed across three different model tiers](docs/wormhole_highlight.gif)
+| What was typed | Asked for | What ran | Cost |
+|---|---|---|---|
+| rename the variable `t` to `running_total` | `sol` | **`luna`** | 19.5x less |
+| add a docstring to the `total` function | `sol` | **`luna`** | 19.5x less |
+| make it safe under concurrent mutation, prove no double-counting, add tests | `sol` | **`terra`** | 1.9x less |
+
+Nobody was asked to choose. The easy work went to the cheapest tier that could
+do it, the concurrency task climbed on its own, and that session cost **$0.11
+instead of $0.44**.
+
+![A Codex session pinned to the top model, with cheaper models actually serving the easy turns](docs/wormhole_highlight.gif)
 
 That loop is cut from the narrated video below, which is worth the three
 minutes if the idea interests you — the GIF has no audio, and the narration

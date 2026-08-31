@@ -760,7 +760,8 @@ async def dispatch_inference(
     router_reasoning: str,
     original_messages: List[Dict[str, Any]],
     tools: Optional[List[Dict[str, Any]]] = None,
-    tool_choice: Optional[Any] = None
+    tool_choice: Optional[Any] = None,
+    requested_model: Optional[str] = None
 ) -> Dict[str, Any]:
     tools = select_tools_for_budget(tools)
     request_id = f"wh-{uuid.uuid4().hex[:12]}"
@@ -878,6 +879,7 @@ async def dispatch_inference(
 
     log_entry = InferenceLog(
         request_id=request_id,
+        requested_model=requested_model,
         original_prompt=original_prompt,
         enhanced_prompt=enhanced_prompt,
         enhancer_model=enhancer_model,
@@ -938,7 +940,8 @@ async def dispatch_streaming_inference(
     router_reasoning: str,
     original_messages: List[Dict[str, Any]],
     tools: Optional[List[Dict[str, Any]]] = None,
-    tool_choice: Optional[Any] = None
+    tool_choice: Optional[Any] = None,
+    requested_model: Optional[str] = None
 ) -> AsyncGenerator[str, None]:
     tools = select_tools_for_budget(tools)
     request_id = f"wh-{uuid.uuid4().hex[:12]}"
@@ -1192,6 +1195,7 @@ async def dispatch_streaming_inference(
 
     log_entry = InferenceLog(
         request_id=request_id,
+        requested_model=requested_model,
         original_prompt=original_prompt,
         enhanced_prompt=enhanced_prompt,
         enhancer_model=enhancer_model,
@@ -1233,7 +1237,8 @@ async def dispatch_responses_streaming_inference(
     router_reasoning: str,
     original_messages: List[Dict[str, Any]],
     tools: Optional[List[Dict[str, Any]]] = None,
-    tool_choice: Optional[Any] = None
+    tool_choice: Optional[Any] = None,
+    requested_model: Optional[str] = None
 ) -> AsyncGenerator[str, None]:
     """
     Executes Responses API streaming events for OpenAI Codex CLI (v0.142+).
@@ -1781,6 +1786,7 @@ async def dispatch_responses_streaming_inference(
 
     log_entry = InferenceLog(
         request_id=request_id,
+        requested_model=requested_model,
         original_prompt=original_prompt,
         enhanced_prompt=enhanced_prompt,
         enhancer_model=enhancer_model,
@@ -1824,7 +1830,8 @@ async def dispatch_anthropic_streaming_inference(
     original_messages: List[Dict[str, Any]],
     tools: Optional[List[Dict[str, Any]]] = None,
     tool_choice: Optional[Any] = None,
-    max_tokens: Optional[int] = None
+    max_tokens: Optional[int] = None,
+    requested_model: Optional[str] = None
 ) -> AsyncGenerator[str, None]:
     """Stream an Anthropic Messages response for Claude Code.
 
@@ -2061,7 +2068,7 @@ async def dispatch_anthropic_streaming_inference(
 
 def _log_inference(request_id, original_prompt, enhanced_prompt, enhancer_model,
                    router_model, selected_model, router_reasoning, completion,
-                   reported_usage=None):
+                   reported_usage=None, requested_model=None):
     prompt_tokens, completion_tokens = usage_or_estimate(reported_usage, enhanced_prompt, completion)
     actual_cost = calculate_cost(selected_model, prompt_tokens, completion_tokens)
     baseline_cost = calculate_cost("gpt-4o", prompt_tokens, completion_tokens)
@@ -2071,6 +2078,7 @@ def _log_inference(request_id, original_prompt, enhanced_prompt, enhancer_model,
                 request_id=request_id,
                 original_prompt=original_prompt,
                 enhanced_prompt=enhanced_prompt,
+                requested_model=requested_model,
                 enhancer_model=enhancer_model,
                 router_model=router_model,
                 selected_model=selected_model,

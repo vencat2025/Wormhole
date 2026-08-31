@@ -234,42 +234,83 @@ def panel(d, x, y, w, h, title=None):
 
 def title_slide(cap):
     img, d = base()
-    d.text((60, 300), "Routing every request to the", font=F_H1, fill=WHITE)
-    d.text((60, 370), "cheapest model that can do the job", font=F_H1, fill=ACCENT)
-    d.text((62, 470), "A local routing layer for Codex and Claude Code.", font=F_BODY, fill=MUTED)
-    d.text((62, 510), "Same tools your engineers already use. No workflow change.", font=F_BODY, fill=MUTED)
-    caption(d, ["A small local service sits between your harness and the model providers.",
-                "It picks a model per request, and stays out of the way otherwise."])
-    return hold(img, 6)
+    d.text((60, 260), "Your engineers picked the", font=F_H1, fill=WHITE)
+    d.text((60, 330), "best model. Of course they did.", font=F_H1, fill=ACCENT)
+    d.text((62, 445), "So every rename now costs what an architecture review costs.", font=F_BODY, fill=MUTED)
+    d.text((62, 490), "This routes each request to the right tier without asking them to.", font=F_BODY, fill=MUTED)
+    caption(d, ["Give a developer a list of models and they will pick the best one, every time.",
+                "That is the rational choice, and it is why model spend does not come down."])
+    return hold(img, 7)
 
 
 def problem_slide(cap):
-    img, d = base("The problem")
-    d.text((60, 160), "One model handles everything", font=F_H2, fill=WHITE)
-    panel(d, 60, 250, 720, 420, "TODAY")
-    for i, t in enumerate([
-        "Rename a variable        -> flagship model",
-        "Write a docstring        -> flagship model",
-        "Add a unit test          -> flagship model",
-        "Design a data migration  -> flagship model",
-    ]):
-        d.text((90, 320 + i * 52), t, font=F_MONO, fill=MUTED if i < 3 else WHITE)
-    d.text((90, 560), "Same cost and same scarce capacity", font=F_BODY, fill=AMBER)
-    d.text((90, 598), "for a rename as for an architecture change.", font=F_BODY, fill=AMBER)
+    """The policy that does not work, and why."""
+    img, d = base("Why model budgets do not hold")
+    d.text((60, 150), "The usual fix asks the wrong person", font=F_H2, fill=WHITE)
 
-    panel(d, 820, 250, 720, 420, "WITH ROUTING")
+    panel(d, 60, 235, 720, 400, "WHAT ORGANISATIONS TRY")
     for i, t in enumerate([
-        "Rename a variable        -> lightest tier",
-        "Write a docstring        -> lightest tier",
-        "Add a unit test          -> lightest tier",
-        "Design a data migration  -> strongest tier",
+        "\"Only use the top model",
+        " when you really need it.\"",
+        "",
+        "Guidance in a wiki.",
+        "A quota. A dashboard.",
+        "A quarterly reminder.",
     ]):
-        d.text((850, 320 + i * 52), t, font=F_MONO, fill=GREEN if i < 3 else WHITE)
-    d.text((850, 560), "The heavyweight model is reserved", font=F_BODY, fill=GREEN)
-    d.text((850, 598), "for work that actually needs it.", font=F_BODY, fill=GREEN)
-    caption(d, ["Today one model answers everything, so a variable rename costs the same as a migration.",
-                "Routing sends each task to the smallest model that can actually finish it."])
-    return hold(img, 11)
+        d.text((90, 300 + i * 48), t, font=F_BODY, fill=WHITE if i < 2 else MUTED)
+
+    panel(d, 820, 235, 720, 400, "WHY IT DOES NOT WORK")
+    for i, t in enumerate([
+        "Nobody knows which prompt",
+        "is hard until it is answered.",
+        "",
+        "Guessing low risks a wrong",
+        "answer. Guessing high always",
+        "works. So everyone guesses high.",
+    ]):
+        d.text((850, 300 + i * 48), t, font=F_BODY, fill=AMBER if i < 2 else MUTED)
+
+    d.text((60, 675), "The decision is being asked of the one person who cannot make it in advance.",
+           font=F_BODY, fill=WHITE)
+    caption(d, ["Every organisation trying to control model spend asks its engineers to choose the cheaper model when they can.",
+                "It does not work, and not because people are careless.",
+                "You cannot tell how hard a prompt is until it has been answered, and guessing high always works. So everyone guesses high."])
+    return hold(img, 16)
+
+
+def pinned_slide(cap):
+    """The whole product, in one table of real turns."""
+    pin = cap.get("pinned")
+    if not pin:
+        return []
+    img, d = base("So stop asking them")
+    d.text((60, 148), f"Codex pinned to {pin['requested']}. Nothing else changed.", font=F_H2, fill=WHITE)
+
+    panel(d, 60, 225, 1480, 330, "REAL TURNS FROM ONE SESSION, FROM THE GATEWAY'S OWN LOG")
+    d.text((90, 285), "WHAT WAS TYPED", font=F_SMALL, fill=MUTED)
+    d.text((880, 285), "ASKED FOR", font=F_SMALL, fill=MUTED)
+    d.text((1130, 285), "WHAT RAN", font=F_SMALL, fill=MUTED)
+    d.text((1410, 285), "COST", font=F_SMALL, fill=MUTED)
+    for i, t in enumerate(pin["tasks"][:4]):
+        y = 340 + i * 52
+        up = t["served"].endswith("terra") or t["served"].endswith("sol")
+        col = AMBER if up else GREEN
+        task = t["prompt"][:44] + ("..." if len(t["prompt"]) > 44 else "")
+        d.text((90, y), task, font=F_MONO_S, fill=WHITE)
+        d.text((880, y), "sol", font=F_MONO_S, fill=MUTED)
+        d.text((1130, y), t["served"].replace("gpt-5.6-", ""), font=F_MONO, fill=col)
+        d.text((1410, y), f"{t['ratio']}x less", font=F_MONO_S, fill=col)
+
+    d.text((60, 585), "The easy work quietly went to the cheapest tier.", font=F_BODY, fill=GREEN)
+    d.text((60, 628), "The concurrency task climbed on its own, without anyone being asked.", font=F_BODY, fill=AMBER)
+    d.text((60, 685),
+           f"Session total: ${pin['total_paid']:.2f} instead of ${pin['total_would']:.2f}. "
+           f"{pin['total_ratio']}x, with the hard task still getting a serious model.",
+           font=F_BODY, fill=WHITE)
+    caption(d, ["Here is the same session with Codex pinned to the top model, which is what a developer would actually set.",
+                "The renames and the docstring went to the cheapest tier and cost about a twentieth as much.",
+                "The concurrency task climbed to a stronger one by itself. Nobody was asked to choose, and the session cost a quarter of what it would have."])
+    return hold(img, 19)
 
 
 def routing_slide(cap):
@@ -387,44 +428,44 @@ def tradeoff_slide(cap):
 
 
 def surfaces_slide(cap):
-    """Every tool that was actually driven through the gateway, and the one
-    that cannot be. The count beside each row is real logged requests, so a
-    reader can reconcile it against /api/logs rather than take it on faith."""
-    rows = cap.get("surfaces")
-    if not rows:
-        return []
-    img, d = base("Works with the harnesses you already use")
-    d.text((60, 145), "Five ways in, all measured", font=F_H2, fill=WHITE)
+    """The two ways this shows up in a real team."""
+    img, d = base("Two ways teams hit this")
+    d.text((60, 145), "The same routing, from either direction", font=F_H2, fill=WHITE)
 
-    y = 235
-    d.text((90, y), "TOOL", font=F_SMALL, fill=MUTED)
-    d.text((470, y), "HOW IT IS POINTED", font=F_SMALL, fill=MUTED)
-    d.text((870, y), "REQUESTS", font=F_SMALL, fill=MUTED)
-    d.text((1080, y), "ROUTED TO", font=F_SMALL, fill=MUTED)
-    d.line([(90, y + 32), (1540, y + 32)], fill=LINE, width=2)
+    panel(d, 60, 225, 720, 440, "1. SOMETHING ELSE IS CALLING CODEX")
+    d.text((90, 285), "codex exec", font=F_MONO, fill=ACCENT)
+    for i, t in enumerate([
+        "A script, a CI job, a pre-commit",
+        "hook, or another agent.",
+        "",
+        "It pins whatever model it was",
+        "written with, often the best one,",
+        "and nobody revisits that line.",
+        "",
+        "The router decides per prompt",
+        "instead.",
+    ]):
+        d.text((90, 340 + i * 36), t, font=F_SMALL, fill=GREEN if i > 6 else MUTED)
 
-    y += 58
-    for r in rows:
-        d.text((90, y), r["name"], font=F_BODY, fill=WHITE)
-        d.text((470, y), r["how"], font=F_BODY, fill=MUTED)
-        # Advisory mode never proxies inference, so a zero here is the design
-        # working, not a tool that failed to connect.
-        req = f"+{r['req']}" if r["req"] else "none (advisory)"
-        d.text((870, y), req, font=F_BODY, fill=GREEN if r["req"] else MUTED)
-        d.text((1080, y), r["model"], font=F_BODY, fill=ACCENT)
-        d.text((1450, y), "OK", font=F_BODY, fill=GREEN)
-        y += 52
+    panel(d, 820, 225, 720, 440, "2. A PERSON IN AN INTERACTIVE SESSION")
+    d.text((850, 285), "~/.codex/config.toml", font=F_MONO, fill=ACCENT)
+    for i, t in enumerate([
+        "They set the strongest model once",
+        "and never think about it again.",
+        "",
+        "Which is correct: they cannot know",
+        "which of today's prompts is hard.",
+        "",
+        "The router decides per prompt",
+        "instead.",
+    ]):
+        d.text((850, 340 + i * 36), t, font=F_SMALL, fill=GREEN if i > 5 else MUTED)
 
-    nr = cap.get("not_routable")
-    if nr:
-        y += 18
-        d.text((90, y), f"{nr['name']}: not routable", font=F_BODY, fill=AMBER)
-        d.text((90, y + 38), nr["why"], font=F_SMALL, fill=MUTED)
-
-    caption(d, ["Codex, Claude Code and OpenCode were each driven end to end, and each one wrote its file.",
-                "The Codex desktop app reads the same config file as the CLI, so it routes too.",
-                "Claude for Desktop cannot: it is the chat app, and has no API endpoint to redirect."])
-    return hold(img, 16)
+    d.text((60, 690), "The gateway cannot tell the two apart, and does not need to.", font=F_BODY, fill=WHITE)
+    caption(d, ["This shows up from two directions and the fix is the same for both.",
+                "Either something automated is calling Codex with a model pinned in a script nobody revisits,",
+                "or a person set the strongest model in their config once and moved on. The gateway cannot tell them apart, and does not need to."])
+    return hold(img, 18)
 
 
 def floor_slide(cap):
@@ -562,24 +603,33 @@ def tier_slide(cap):
 
 
 def dashboard_slide(cap):
-    """Show the gateway dashboard with a real harness request routed through it."""
-    img, d = base("Routing happens on your machine, live")
+    """The audit trail, which is what makes this defensible internally."""
+    pin = cap.get("pinned") or {}
+    img, d = base("You can see every decision")
+    d.text((60, 145), "Asked for, and what actually ran, side by side", font=F_H2, fill=WHITE)
 
-    d.text((60, 145), "A Codex prompt routed in real time", font=F_H2, fill=WHITE)
+    panel(d, 60, 225, 1480, 300, "THE LOCAL DASHBOARD")
+    d.text((90, 285), "PROMPT", font=F_SMALL, fill=MUTED)
+    d.text((760, 285), "MODEL ASKED FOR", font=F_SMALL, fill=MUTED)
+    d.text((1130, 285), "MODEL THAT RAN", font=F_SMALL, fill=MUTED)
+    rows = [("rename the variable t to running_total", "gpt-5.6-sol", "gpt-5.6-luna", GREEN),
+            ("add a docstring to the total function", "gpt-5.6-sol", "gpt-5.6-luna", GREEN),
+            ("make it safe under concurrent mutation", "gpt-5.6-sol", "gpt-5.6-terra", AMBER)]
+    for i, (task, asked, ran, col) in enumerate(rows):
+        y = 340 + i * 52
+        d.text((90, y), task, font=F_MONO_S, fill=WHITE)
+        d.text((760, y), asked, font=F_MONO_S, fill=MUTED)
+        d.text((1130, y), ran, font=F_MONO_S, fill=col)
 
-    panel(d, 60, 235, 1480, 380, "HARNESS REQUEST")
-    d.text((90, 300), "Codex: Create a file called invoice.py with totals function", 
-           font=F_BODY, fill=WHITE)
-    d.line([(90, 340), (1500, 340)], fill=LINE, width=1)
+    d.text((60, 560), "Nothing is hidden from the developer, and nothing needs their attention.", font=F_BODY, fill=WHITE)
+    d.text((60, 605), "Finance gets a per-request record. Engineering gets its model of choice on the hard work.",
+           font=F_BODY, fill=MUTED)
+    d.text((60, 660), "It all runs on the machine. Prompts do not leave it to be routed.", font=F_BODY, fill=GREEN)
+    caption(d, ["Every decision is logged locally with the model that was asked for beside the model that ran.",
+                "Nothing is hidden from the developer, and nothing needs their attention.",
+                "Finance gets a per-request record, engineering keeps the strong model on the work that needs it, and the prompts never leave the machine."])
+    return hold(img, 17)
 
-    d.text((90, 370), "Router picked: gpt-4o-mini", font=F_H2, fill=GREEN)
-    d.text((90, 420), "Cost: $0.000827  |  Tokens: 5,380 in / 34 out", font=F_BODY, fill=ACCENT)
-    d.text((90, 460), "You can inspect the enhanced prompt on the dashboard", font=F_SMALL, fill=MUTED)
-    d.text((90, 500), "Every request, every decision, every model choice — live.", font=F_SMALL, fill=MUTED)
-
-    caption(d, ["The dashboard logs every harness request, the routing decision, and the cost.",
-                "The router made its choice on this machine in under a millisecond. No network call, no extra latency."])
-    return hold(img, 12)
 
 def close_slide(cap):
     img, d = base()
@@ -606,9 +656,12 @@ def main():
         sys.exit(f"No capture at {CAPTURE}.")
     cap = json.load(open(CAPTURE))
     frames = []
-    for fn in (title_slide, problem_slide, routing_slide, family_slide, api_slide,
-               tier_slide, surfaces_slide, dashboard_slide,
-               tradeoff_slide, floor_slide, loop_slide, close_slide):
+    # Ordered as an argument, not a feature list: the policy problem, the one
+    # session that shows it solved, where it shows up, what it costs, how you
+    # audit it, and what it cannot do.
+    for fn in (title_slide, problem_slide, pinned_slide, surfaces_slide,
+               family_slide, dashboard_slide, floor_slide, tradeoff_slide,
+               loop_slide, close_slide):
         frames += fn(cap)
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
     silent = OUT if not any(p for p, _ in SEGMENTS) else OUT.replace(".mp4", ".silent.mp4")

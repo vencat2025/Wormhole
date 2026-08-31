@@ -160,7 +160,16 @@ async def test_min_routing_tier_excludes_weaker_models():
     from services.dispatcher import is_model_routable
 
     original = settings.MIN_ROUTING_TIER
+    # This test is about the tier floor, so the other filters that can also
+    # make a model unroutable have to be out of the way. Without this the
+    # result depends on whatever ROUTING_MODELS happens to be in the
+    # developer's own .env, and the test fails for a reason that has nothing
+    # to do with what it is checking.
+    original_models = settings.ROUTING_MODELS
+    original_providers = settings.ROUTING_PROVIDERS
     try:
+        settings.ROUTING_MODELS = []
+        settings.ROUTING_PROVIDERS = []
         settings.MIN_ROUTING_TIER = ""
         assert is_model_routable("gpt-5-nano"), "basic tier should be routable with no floor"
 
@@ -179,3 +188,5 @@ async def test_min_routing_tier_excludes_weaker_models():
         assert is_model_routable("gpt-4o-mini"), "an unrecognised floor must be ignored, not fatal"
     finally:
         settings.MIN_ROUTING_TIER = original
+        settings.ROUTING_MODELS = original_models
+        settings.ROUTING_PROVIDERS = original_providers

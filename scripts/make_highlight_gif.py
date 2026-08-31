@@ -36,8 +36,8 @@ WORK = os.path.join(ROOT, "data", "_gif_build")
 # narration is re-recorded, so check these against a fresh render rather than
 # assuming they still point at the right moment.
 BEATS = [
-    (21.3, 6.4),    # routing decisions, building up
-    (125.2, 5.2),   # same work, same result, a twenty-fifth of the price
+    (12.0, 5.0),    # the policy that does not work, and why
+    (41.0, 7.5),    # pinned to sol, and what actually ran
 ]
 
 WIDTH = 820

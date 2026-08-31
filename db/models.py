@@ -16,6 +16,12 @@ class InferenceLog(SQLModel, table=True):
     router_model: str
     router_reasoning: Optional[str] = None
     selected_model: str
+    # What the harness asked for before routing. Codex, Claude Code and
+    # OpenCode each pin a model in their own config, and the whole point of
+    # this gateway is that the pinned choice is not the one that runs. Without
+    # recording it there is no way to show, or audit, the gap between the model
+    # a developer selected and the model that actually served the request.
+    requested_model: Optional[str] = None
     baseline_model: str = "gpt-4o"
     
     # Execution & Cost Metrics

@@ -40,6 +40,30 @@ coding agent sends. A few things follow from that:
   prompt history and not only the inference routes. The dashboard is served
   from the same origin and is unaffected.
 
+## The benchmark runs model-written code on your machine
+
+`scripts/evaluate_routing_quality.py` asks models to write Python, then
+executes it to see whether it passes MBPP's assertions. Executing it is the
+whole point -- that is what makes the result a measurement rather than an
+opinion -- but it means **code you did not write, from a model, runs with your
+user's permissions.**
+
+The MBPP tasks themselves are benign, and normal model output for them is a
+short pure function. The risk is not that MBPP is dangerous; it is that you are
+running unreviewed generated code, and a compromised provider response or a
+prompt-injected model could put anything in it. There is no sandbox in that
+script.
+
+If that matters for your environment, run it inside a container or a VM:
+
+```bash
+docker run --rm -it -v "$PWD":/w -w /w python:3.12 \
+  sh -c "pip install -q -r requirements.txt && python scripts/evaluate_routing_quality.py --n 24"
+```
+
+Nothing else in this project executes model output. The gateway itself only
+forwards tool calls back to your harness, which applies its own approval rules.
+
 ## If a key has ever been committed
 
 Purging it from history is necessary and not sufficient. **Rotate the key.**

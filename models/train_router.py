@@ -15,9 +15,19 @@ switching vendors entirely never invalidates the classifier. The router asks it
 how hard the task is, then spends the least money that buys that capability
 from whatever the user actually has credentials for.
 
-The bootstrap labels come from measured benchmark difficulty rather than
-opinion. SWE-bench carries a real per-instance pass rate across 134 systems, so
-the instances almost nothing solved are the ones marked frontier.
+Every bootstrap row is a real benchmark item, and the dataset is built locally
+rather than shipped: it is assembled from other people's data under their own
+licences. Labels come from two places, and the dataset records which, per row.
+SWE-bench instances carry the solve rate actually observed across the published
+field, so an instance almost nothing solved is frontier work by observation.
+The HumanEval, GSM8K and MBPP prompts have no published per-item difficulty, so
+theirs is a keyword heuristic over the prompt, which is weaker and is labelled
+as such.
+
+An earlier version padded this out with hand-written prompts filed under MATH,
+GPQA, MMLU and IFEval, with per-model pass rates typed in by hand. They scored
+better on a held-out split precisely because they were templates and easy to
+fit, while routing real prompts worse. They are gone.
 """
 
 import os
@@ -40,36 +50,16 @@ DATASET_PATH = os.path.join(PROJECT_ROOT, "data", "frontier_benchmark_dataset.js
 MODEL_OUTPUT_DIR = os.path.join(PROJECT_ROOT, "models")
 MODEL_FILE_PATH = os.path.join(MODEL_OUTPUT_DIR, "router_slm.joblib")
 
-# Almost no system in the SWE-bench field solved an instance below this rate,
-# which is the strongest evidence available that a task needs the top tier.
-FRONTIER_PASS_RATE = 0.2
-
-
 def tier_for_record(record: dict) -> str:
-    """Map one benchmark record onto the capability tier it demands.
+    """The tier the dataset itself recorded for this row.
 
-    `difficulty` carries most of the signal, but it only has three values while
-    the fleet has four tiers, and collapsing hard-and-frontier loses exactly the
-    distinction that matters most: it is the difference between a cheap
-    reasoning tier and the expensive one. Where a measured pass rate exists,
-    use it to recover that split.
+    This used to derive the tier here, including a rule that promoted anything
+    filed under GPQA to frontier. Those GPQA rows were hand-written templates
+    rather than GPQA items, so the rule was reasoning about data that did not
+    exist. The builder now writes a tier per row, along with label_source
+    saying whether it came from a measured solve rate or a keyword heuristic.
     """
-    difficulty = (record.get("difficulty") or "").lower()
-    if difficulty == "easy":
-        return "basic"
-    if difficulty == "medium":
-        return "medium"
-
-    benchmark = record.get("benchmark")
-    pass_rate = record.get("expected_pass_rate")
-
-    # Graduate-level science questions, and the SWE-bench instances the field
-    # as a whole could not solve.
-    if benchmark == "GPQA":
-        return "frontier"
-    if benchmark == "SWE-bench" and pass_rate is not None and pass_rate < FRONTIER_PASS_RATE:
-        return "frontier"
-    return "high"
+    return record.get("tier") or "medium"
 
 
 def short_form_of(record: dict) -> str:
@@ -93,9 +83,19 @@ def short_form_of(record: dict) -> str:
 
 def train_router_slm():
     if not os.path.exists(DATASET_PATH):
-        raise FileNotFoundError(
-            f"Dataset not found at {DATASET_PATH}. Run scripts/build_benchmark_dataset.py first."
-        )
+        # The dataset is not committed. It is assembled from SWE-bench,
+        # HumanEval, GSM8K and MBPP, which are other people's data under their
+        # own licences, and redistributing a copy of it inside this repository
+        # is not ours to do. Building it locally is a fetch and a few seconds.
+        print("No bootstrap dataset yet; building it from the public benchmarks...")
+        import subprocess
+        import sys as _sys
+        builder = os.path.join(PROJECT_ROOT, "scripts", "build_benchmark_dataset.py")
+        subprocess.run([_sys.executable, builder], check=True)
+        if not os.path.exists(DATASET_PATH):
+            raise FileNotFoundError(
+                f"Dataset still missing at {DATASET_PATH} after running the builder."
+            )
 
     with open(DATASET_PATH, "r") as f:
         dataset = json.load(f)
@@ -140,6 +140,8 @@ def train_router_slm():
           f"({len(dataset)} benchmark + {short_added} issue titles "
           f"+ {len(feedback)} judged real prompts x{FEEDBACK_WEIGHT})")
     print("   tier distribution: " + ", ".join(f"{k}={v}" for k, v in sorted(Counter(y).items())))
+    srcs = Counter(d.get("label_source", "unknown") for d in dataset)
+    print("   label provenance:  " + ", ".join(f"{k}={v}" for k, v in sorted(srcs.items())))
 
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, random_state=42, stratify=y
@@ -152,7 +154,16 @@ def train_router_slm():
             n_estimators=100, learning_rate=0.1, max_depth=5, random_state=42)),
     ])
 
-    pipeline.fit(X_train, y_train)
+    # Real benchmark data is overwhelmingly easy, so the hard tiers are a small
+    # minority and an unweighted fit learns to answer "basic" and be right most
+    # of the time. Measured unweighted on this data: one of seven held-out
+    # routing cases correct. Weighting each class inversely to its frequency is
+    # the better of the two, and it is still not good -- see the honest
+    # limitations section in the README.
+    counts = Counter(y_train)
+    n_classes = len(counts)
+    weights = [len(y_train) / (n_classes * counts[label]) for label in y_train]
+    pipeline.fit(X_train, y_train, classifier__sample_weight=weights)
 
     y_pred = pipeline.predict(X_test)
     accuracy = accuracy_score(y_test, y_pred)

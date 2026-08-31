@@ -86,6 +86,52 @@ def _first_routable(model_ids, need_tools: bool) -> str:
     return ""
 
 
+# Vocabulary that names an obligation a cheap tier cannot discharge. This is a
+# heuristic and is labelled as one; it is not pretending to be learned.
+#
+# It exists because the bootstrap cannot teach this. The classifier is trained
+# on real benchmark data only: SWE-bench, which is bug-report prose, and
+# HumanEval, GSM8K and MBPP, which are short exercises. None of that contains
+# "prove the bound" or "design the migration", so nothing in the training data
+# associates those words with difficulty. Measured after removing the synthetic
+# rows that used to supply that vocabulary: "find all quad tuples summing to
+# target with O(N^3) optimisation and a formal proof of correctness for an
+# enterprise architecture" was classified medium.
+#
+# A stated obligation is one of the few difficulty signals that is legible in
+# the prompt itself, so this floors the tier rather than replacing the
+# classifier's judgement: it can raise a decision, never lower one.
+ESCALATION_SIGNALS = (
+    "prove", "proof", "formally verify", "invariant",
+    "complexity bound", "o(n", "amortis", "amortiz",
+    "concurren", "race condition", "deadlock", "thread-safe", "atomic",
+    "distributed", "consensus", "idempoten", "exactly-once",
+    "migration", "migrate", "zero-downtime", "backward compatib",
+    "architect", "refactor across", "multi-file", "end-to-end",
+)
+
+# The floor a stated obligation implies. Not frontier: this is a keyword match,
+# and a keyword match should not be able to select the most expensive tier on
+# its own.
+ESCALATION_FLOOR = "high"
+
+
+def escalation_floor_for(prompt: str) -> str:
+    """The tier a prompt's stated obligations demand, or "" for none."""
+    low = (prompt or "").lower()
+    return ESCALATION_FLOOR if any(sig in low for sig in ESCALATION_SIGNALS) else ""
+
+
+def raise_to_floor(tier: str, floor: str) -> str:
+    """The stronger of the two tiers. Never weakens the classifier's pick."""
+    if not floor:
+        return tier
+    try:
+        return floor if TIER_ORDER.index(floor) > TIER_ORDER.index(tier) else tier
+    except ValueError:
+        return tier
+
+
 def cheapest_at_or_above(tier: str, need_tools: bool) -> str:
     """Least expensive reachable model that still clears the given tier.
 
@@ -184,6 +230,12 @@ async def route_prompt(enhanced_prompt: str, model_name: str = None, has_tools: 
             # property of the prompt and so survives any change to the fleet.
             # Resolve it against whatever is reachable right now.
             if predicted_model in TIER_ORDER:
+                floor = escalation_floor_for(enhanced_prompt)
+                raised = raise_to_floor(predicted_model, floor)
+                if raised != predicted_model:
+                    logger.info("Prompt states an obligation the '%s' tier cannot meet; "
+                                "raising to '%s'.", predicted_model, raised)
+                predicted_model = raised
                 chosen = cheapest_at_or_above(predicted_model, has_tools)
                 if chosen:
                     cfg = settings.model_config_for(chosen)

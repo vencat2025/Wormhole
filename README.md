@@ -651,11 +651,23 @@ Retraining is a local command and needs no API key:
 python models/train_router.py
 ```
 
-The bootstrap set is built from real benchmark items — SWE-bench, HumanEval,
-GSM8K, MATH, GPQA — fetched by `scripts/fetch_benchmark_prompts.py` and cached
-rather than committed. Tier labels come from measured difficulty: SWE-bench
-instances below a 0.2 pass rate across the published field are frontier, and
-GPQA is graduate-level by construction.
+The bootstrap set is built locally, not shipped. `models/train_router.py` runs
+the builder for you the first time, which fetches SWE-bench, HumanEval, GSM8K
+and MBPP. The assembled file is gitignored: it is other people's data under
+their own licences, and a copy of it is not ours to redistribute.
+
+**Every row is a real benchmark item, and each one records how it was
+labelled.** SWE-bench instances carry the solve rate observed across the
+published field, so an instance almost nothing solved is frontier work by
+observation rather than opinion. HumanEval, GSM8K and MBPP publish no per-item
+difficulty, so theirs comes from a keyword heuristic over the prompt, which is
+weaker; rows say which they are in `label_source`.
+
+An earlier version of this dataset padded itself out with hand-written prompts
+filed under MATH, GPQA, MMLU and IFEval, with per-model pass rates typed into
+the builder by hand. They read as benchmark data and were not. Removing them
+dropped held-out accuracy from 89% to 75%, because templates are easy to fit,
+and *improved* routing on real prompts. The lower number is the honest one.
 
 Expect the router to improve as your traffic accumulates. The bootstrap gives it
 real task phrasing, but its labels come from published benchmark pass rates
@@ -685,12 +697,13 @@ zero-downtime sharding migration both landed on the cheapest tier. Add a
 provider key now and the pool widens on the very next request, with no
 retraining.
 
-**What the labels are built from.** Bootstrap labels come from measured
-benchmark difficulty rather than opinion: SWE-bench publishes a per-instance
-pass rate across 134 systems, so the instances almost nothing solved are the
-ones marked frontier. The classifier reproduces those labels on a held-out
-split of that data about nine times in ten, and decides in under a millisecond,
-locally, with no network call.
+**What the labels are built from.** SWE-bench publishes a per-instance pass
+rate across the systems that have attempted it, so the instances almost nothing
+solved are the ones marked frontier. That half is measured. The HumanEval,
+GSM8K and MBPP half is labelled by a keyword heuristic over the prompt, and the
+dataset says so per row. The classifier reproduces those labels on a held-out
+split about three times in four, and decides in under a millisecond, locally,
+with no network call.
 
 Read that as a statement about the training data, not a promise about your
 prompts. Scoring well against benchmark text is not the same as judging the

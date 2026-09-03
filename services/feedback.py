@@ -47,6 +47,11 @@ LEGACY_PLACEHOLDER_SCORE = 8.5
 # not.
 INFORMATIVE_SUCCESS_TIERS = {"basic", "medium"}
 
+# Written by the dispatcher when no candidate model could serve the request.
+# Kept in sync with services/dispatcher.py by this constant rather than by
+# hoping two strings stay identical.
+GATEWAY_FAILURE_MARKER = "This text is not an answer."
+
 
 def _tier_of(model_id: str) -> Optional[str]:
     """The capability tier the given model sits in."""
@@ -66,6 +71,7 @@ def collect_feedback_examples(min_prompt_chars: int = 12) -> List[Dict[str, Any]
     """Build (prompt, tier) examples from judged real traffic."""
     examples: List[Dict[str, Any]] = []
     skipped_unscored = skipped_placeholder = skipped_empty = 0
+    skipped_gateway_failure = 0
     skipped_uninformative = escalated = 0
 
     with Session(engine) as session:
@@ -92,6 +98,15 @@ def collect_feedback_examples(min_prompt_chars: int = 12) -> List[Dict[str, Any]
         # empty completion is never evidence about difficulty.
         if not (row.completion or "").strip():
             skipped_empty += 1
+            continue
+
+        # The gateway writes a placeholder when every candidate model failed.
+        # It is not a completion, the judge scores it 1.0 for containing no
+        # work, and the escalation rule then reads that as "this prompt needs a
+        # stronger tier" -- teaching the router from an outage. Same shape as
+        # the empty-completion case above.
+        if GATEWAY_FAILURE_MARKER in (row.completion or ""):
+            skipped_gateway_failure += 1
             continue
 
         served_tier = _tier_of(row.selected_model)
@@ -140,6 +155,7 @@ def collect_feedback_examples(min_prompt_chars: int = 12) -> List[Dict[str, Any]
         f"({escalated} relabelled upward); skipped {skipped_unscored} unscored, "
         f"{skipped_placeholder} carrying the legacy placeholder score, "
         f"{skipped_empty} judged with an empty completion, "
+        f"{skipped_gateway_failure} where every model failed, "
         f"{skipped_uninformative} passing on a tier too strong to prove anything."
     )
     return examples

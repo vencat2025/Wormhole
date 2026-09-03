@@ -132,6 +132,19 @@ def in_cooldown(model_id: str) -> bool:
     return True
 
 
+def temperature_kwargs(model_id: str, value: float = 0.7) -> Dict[str, Any]:
+    """The temperature argument for this model, or nothing at all.
+
+    Reasoning tiers reject any explicit temperature, and they reject the value
+    rather than the parameter, so litellm's drop_params does not save us. Sending
+    it anyway fails the call outright.
+    """
+    cfg = settings.model_config_for(model_id)
+    if cfg and not cfg.supports_temperature:
+        return {}
+    return {"temperature": value}
+
+
 def _use_responses_api(model_id: str, has_tools: bool) -> bool:
     """Whether this call has to leave over /v1/responses instead of chat.
 
@@ -816,7 +829,7 @@ async def dispatch_inference(
             **({'prompt_cache_key': prompt_cache_key} if prompt_cache_key else {}),
             model=active_model,
             messages=messages_to_send,
-            temperature=0.7,
+            **temperature_kwargs(active_model),
             **extra_kwargs
         )
         latency_ms = round((time.time() - start_time) * 1000, 2)
@@ -866,7 +879,7 @@ async def dispatch_inference(
                     **({'prompt_cache_key': prompt_cache_key} if prompt_cache_key else {}),
                     model=candidate,
                     messages=messages_to_send,
-                    temperature=0.7,
+                    **temperature_kwargs(candidate),
                     **fb_kwargs
                 )
                 choice = response.choices[0]
@@ -883,7 +896,9 @@ async def dispatch_inference(
                 logger.warning(f"Candidate '{candidate}' failed: {fb_err}")
                 
         if not success:
-            completion_text = f"Processed request for: '{original_prompt}'. All configured target model providers returned rate-limit limits."
+            completion_text = ("Every candidate model failed for this request. "
+                               "The gateway log has the provider errors. "
+                               "This text is not an answer.")
         
         latency_ms = round((time.time() - start_time) * 1000, 2)
         prompt_tokens = len(enhanced_prompt) // 4
@@ -1019,7 +1034,7 @@ async def dispatch_streaming_inference(
             **({'prompt_cache_key': prompt_cache_key} if prompt_cache_key else {}),
             model=selected_model,
             messages=messages_to_send,
-            temperature=0.7,
+            **temperature_kwargs(selected_model),
             stream=True,
             # Providers report real token counts in a final chunk when asked.
             # Without this the log falls back to a length heuristic that
@@ -1156,7 +1171,7 @@ async def dispatch_streaming_inference(
                     retry = await acompletion_with_backoff(
                         model=candidate,
                         messages=messages_to_send,
-                        temperature=0.7,
+                        **temperature_kwargs(candidate),
                         **cand_kwargs
                     )
                     msg = retry.choices[0].message
@@ -1354,7 +1369,7 @@ async def dispatch_responses_streaming_inference(
             **({'prompt_cache_key': prompt_cache_key} if prompt_cache_key else {}),
             model=selected_model,
             messages=messages_to_send,
-            temperature=0.7,
+            **temperature_kwargs(selected_model),
             stream=True,
             # Providers report real token counts in a final chunk when asked.
             # Without this the log falls back to a length heuristic that
@@ -1583,7 +1598,7 @@ async def dispatch_responses_streaming_inference(
                 fallback_stream = await acompletion_with_backoff(
                     model=candidate,
                     messages=cand_messages,
-                    temperature=0.7,
+                    **temperature_kwargs(candidate),
                     stream=True,
             # Providers report real token counts in a final chunk when asked.
             # Without this the log falls back to a length heuristic that
@@ -1667,7 +1682,9 @@ async def dispatch_responses_streaming_inference(
 
         if not success:
             logger.error("All model candidates exhausted. Generating dynamic response.")
-            full_completion = f"Processed request for: '{original_prompt}'. All configured target model providers returned rate-limit limits."
+            full_completion = ("Every candidate model failed for this request. "
+                               "The gateway log has the provider errors. "
+                               "This text is not an answer.")
             words = full_completion.split(" ")
             for idx, word in enumerate(words):
                 delta = word if idx == len(words) - 1 else word + " "
@@ -1923,7 +1940,7 @@ async def dispatch_anthropic_streaming_inference(
             **({'prompt_cache_key': prompt_cache_key} if prompt_cache_key else {}),
             model=selected_model,
             messages=messages_to_send,
-            temperature=0.7,
+            **temperature_kwargs(selected_model),
             stream=True,
             # Providers report real token counts in a final chunk when asked.
             # Without this the log falls back to a length heuristic that
@@ -2004,7 +2021,7 @@ async def dispatch_anthropic_streaming_inference(
                 if max_tokens:
                     cand_kwargs["max_tokens"] = max_tokens
                 retry = await acompletion_with_backoff(
-                    model=candidate, messages=messages_to_send, temperature=0.7, **cand_kwargs
+                    model=candidate, messages=messages_to_send, **temperature_kwargs(candidate), **cand_kwargs
                 )
                 msg_obj = retry.choices[0].message
                 text = msg_obj.content or ""

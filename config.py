@@ -28,6 +28,17 @@ class CandidateModelConfig(BaseModel):
     # completions unless reasoning_effort is 'none', which turns off the very
     # thing you picked the tier for. See services/openai_responses.py.
     requires_responses_api: bool = False
+    # Whether the model accepts a temperature other than its default. The
+    # reasoning tiers reject any explicit value: OpenAI answers "Unsupported
+    # value: 'temperature' does not support 0.7 with this model. Only the
+    # default (1) value is supported."
+    #
+    # litellm's drop_params does not catch this, because the parameter is
+    # supported and the *value* is not, so the request fails outright. Measured
+    # before this flag existed: a plain chat completion tried luna, terra and
+    # sol, all three failed on temperature, and the user was handed a canned
+    # "all providers rate-limited" string that was neither true nor an answer.
+    supports_temperature: bool = True
     # Whether the model can actually sustain a harness's multi-step loop:
     # explore, decide, act, check, continue. This is a different question from
     # supports_tools, and the gap between them has now bitten three times.
@@ -316,7 +327,8 @@ class Settings:
             speed_tier="fast",
             intelligence_tier="medium",
             pricing_verified=True,
-            requires_responses_api=True
+            requires_responses_api=True,
+            supports_temperature=False
         ),
         CandidateModelConfig(
             id="gpt-5.6-terra",
@@ -328,7 +340,8 @@ class Settings:
             speed_tier="medium",
             intelligence_tier="high",
             pricing_verified=True,
-            requires_responses_api=True
+            requires_responses_api=True,
+            supports_temperature=False
         ),
         CandidateModelConfig(
             id="gpt-5.6-sol",
@@ -346,7 +359,8 @@ class Settings:
             # is paid for. The gateway sends them over /v1/responses instead,
             # where tools and full reasoning coexist, so supports_tools stays
             # True. See requires_responses_api above.
-            requires_responses_api=True
+            requires_responses_api=True,
+            supports_temperature=False
         ),
         CandidateModelConfig(
             id="gpt-4o",

@@ -158,6 +158,20 @@ async def acompletion_with_backoff(attempts: int = 3, **kwargs):
     here rather than in each of the four callers means the chat, Codex and
     Anthropic surfaces all gain those models without knowing they exist.
     """
+    # A harness sends the whole conversation every turn, so almost all of the
+    # input tokens on turn N were already sent on turn N-1. Providers give that
+    # repeated prefix back at a large discount, but only when they can identify
+    # the conversation, and Codex tells them how: it sets prompt_cache_key to a
+    # stable per-session UUID.
+    #
+    # This gateway used to drop that field, which meant the discount was lost on
+    # every turn even when routing had kept the same model throughout. Measured
+    # on a real session, the repeated prefix was 31,546 tokens against roughly
+    # 200 new ones per turn, and input is 88% of everything billed, so this is
+    # not a rounding error.
+    if kwargs.get("prompt_cache_key") is None:
+        kwargs.pop("prompt_cache_key", None)
+
     call = (
         aresponses_as_chat
         if _use_responses_api(kwargs.get("model", ""), bool(kwargs.get("tools")))
@@ -761,7 +775,8 @@ async def dispatch_inference(
     original_messages: List[Dict[str, Any]],
     tools: Optional[List[Dict[str, Any]]] = None,
     tool_choice: Optional[Any] = None,
-    requested_model: Optional[str] = None
+    requested_model: Optional[str] = None,
+    prompt_cache_key: Optional[str] = None
 ) -> Dict[str, Any]:
     tools = select_tools_for_budget(tools)
     request_id = f"wh-{uuid.uuid4().hex[:12]}"
@@ -798,6 +813,7 @@ async def dispatch_inference(
                 extra_kwargs["tool_choice"] = "auto"
 
         response = await acompletion_with_backoff(
+            **({'prompt_cache_key': prompt_cache_key} if prompt_cache_key else {}),
             model=active_model,
             messages=messages_to_send,
             temperature=0.7,
@@ -847,6 +863,7 @@ async def dispatch_inference(
                 logger.info(f"Attempting non-streaming fallback model: {candidate}")
                 fb_kwargs = dict(extra_kwargs)
                 response = await acompletion_with_backoff(
+                    **({'prompt_cache_key': prompt_cache_key} if prompt_cache_key else {}),
                     model=candidate,
                     messages=messages_to_send,
                     temperature=0.7,
@@ -941,7 +958,8 @@ async def dispatch_streaming_inference(
     original_messages: List[Dict[str, Any]],
     tools: Optional[List[Dict[str, Any]]] = None,
     tool_choice: Optional[Any] = None,
-    requested_model: Optional[str] = None
+    requested_model: Optional[str] = None,
+    prompt_cache_key: Optional[str] = None
 ) -> AsyncGenerator[str, None]:
     tools = select_tools_for_budget(tools)
     request_id = f"wh-{uuid.uuid4().hex[:12]}"
@@ -998,6 +1016,7 @@ async def dispatch_streaming_inference(
                 extra_kwargs["tool_choice"] = "auto"
 
         response_stream = await acompletion_with_backoff(
+            **({'prompt_cache_key': prompt_cache_key} if prompt_cache_key else {}),
             model=selected_model,
             messages=messages_to_send,
             temperature=0.7,
@@ -1238,7 +1257,8 @@ async def dispatch_responses_streaming_inference(
     original_messages: List[Dict[str, Any]],
     tools: Optional[List[Dict[str, Any]]] = None,
     tool_choice: Optional[Any] = None,
-    requested_model: Optional[str] = None
+    requested_model: Optional[str] = None,
+    prompt_cache_key: Optional[str] = None
 ) -> AsyncGenerator[str, None]:
     """
     Executes Responses API streaming events for OpenAI Codex CLI (v0.142+).
@@ -1331,6 +1351,7 @@ async def dispatch_responses_streaming_inference(
                 extra_kwargs["tool_choice"] = "auto"
 
         response_stream = await acompletion_with_backoff(
+            **({'prompt_cache_key': prompt_cache_key} if prompt_cache_key else {}),
             model=selected_model,
             messages=messages_to_send,
             temperature=0.7,
@@ -1831,7 +1852,8 @@ async def dispatch_anthropic_streaming_inference(
     tools: Optional[List[Dict[str, Any]]] = None,
     tool_choice: Optional[Any] = None,
     max_tokens: Optional[int] = None,
-    requested_model: Optional[str] = None
+    requested_model: Optional[str] = None,
+    prompt_cache_key: Optional[str] = None
 ) -> AsyncGenerator[str, None]:
     """Stream an Anthropic Messages response for Claude Code.
 
@@ -1898,6 +1920,7 @@ async def dispatch_anthropic_streaming_inference(
             extra_kwargs["max_tokens"] = max_tokens
 
         stream = await acompletion_with_backoff(
+            **({'prompt_cache_key': prompt_cache_key} if prompt_cache_key else {}),
             model=selected_model,
             messages=messages_to_send,
             temperature=0.7,

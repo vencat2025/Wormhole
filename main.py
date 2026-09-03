@@ -589,6 +589,7 @@ async def openai_responses_endpoint(
         return StreamingResponse(
             dispatch_responses_streaming_inference(
                 requested_model=raw_request.get("model"),
+                prompt_cache_key=raw_request.get("prompt_cache_key"),
                 original_prompt=original_prompt,
                 enhanced_prompt=enhanced_prompt,
                 enhancer_model=settings.ENHANCER_MODEL if settings.should_enhance_for(selected_model) else "bypassed",
@@ -696,6 +697,7 @@ async def anthropic_messages_endpoint(
         return StreamingResponse(
             dispatch_anthropic_streaming_inference(
                 requested_model=raw_request.get("model"),
+                prompt_cache_key=raw_request.get("prompt_cache_key"),
                 original_prompt=original_prompt,
                 enhanced_prompt=enhanced_prompt,
                 enhancer_model=settings.ENHANCER_MODEL if settings.should_enhance_for(selected_model) else "bypassed",

@@ -308,6 +308,12 @@ async def aresponses_as_chat(**kwargs):
         "stream": bool(kwargs.get("stream")),
     }
 
+    # The caller's conversation key, so the provider can find the warm prefix.
+    # Dropping it is how a session pays full rate for the same 31k tokens on
+    # every turn; see the note in dispatcher.acompletion_with_backoff.
+    if kwargs.get("prompt_cache_key"):
+        payload["prompt_cache_key"] = kwargs["prompt_cache_key"]
+
     tools = _to_responses_tools(kwargs.get("tools"))
     if tools:
         payload["tools"] = tools

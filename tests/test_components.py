@@ -1,7 +1,7 @@
 import json
 import pytest
 import asyncio
-from config import settings
+from config import settings, TIER_ORDER
 from db.database import init_db
 from services.enhancer import enhance_prompt
 from services.router import route_prompt
@@ -172,39 +172,53 @@ async def test_slm_model_suggestion_and_routing():
 async def test_min_routing_tier_excludes_weaker_models():
     """The floor must hold regardless of what the router would prefer.
 
-    A model can call tools correctly and still be unable to drive an agentic
-    harness, so supports_tools is not a sufficient guard on its own. This is
-    the setting that keeps those tiers out of the pool entirely.
+    Written against whatever fleet the runner can actually reach, rather than
+    against specific OpenAI ids. The earlier version asserted that gpt-5-nano
+    was routable, which is false for anyone whose .env holds only the free Groq
+    key -- the setup this project's own README tells newcomers to start with.
+    It failed on a clean clone for a reason that had nothing to do with the
+    tier floor it was testing.
     """
     from services.dispatcher import is_model_routable
 
     original = settings.MIN_ROUTING_TIER
-    # This test is about the tier floor, so the other filters that can also
-    # make a model unroutable have to be out of the way. Without this the
-    # result depends on whatever ROUTING_MODELS happens to be in the
-    # developer's own .env, and the test fails for a reason that has nothing
-    # to do with what it is checking.
     original_models = settings.ROUTING_MODELS
     original_providers = settings.ROUTING_PROVIDERS
     try:
+        # Only the tier floor should be deciding anything here.
         settings.ROUTING_MODELS = []
         settings.ROUTING_PROVIDERS = []
         settings.MIN_ROUTING_TIER = ""
-        assert is_model_routable("gpt-5-nano"), "basic tier should be routable with no floor"
 
-        settings.MIN_ROUTING_TIER = "medium"
-        assert not is_model_routable("gpt-5-nano"), "basic tier must be excluded by a medium floor"
-        assert is_model_routable("gpt-4o-mini"), "medium tier must survive its own floor"
-        assert is_model_routable("gpt-4o"), "frontier tier must survive a medium floor"
+        reachable = [m for m in settings.CANDIDATE_MODELS if is_model_routable(m.id)]
+        if not reachable:
+            pytest.skip("no model is reachable with the configured credentials")
 
-        settings.MIN_ROUTING_TIER = "frontier"
-        assert not is_model_routable("gpt-4o-mini")
-        assert is_model_routable("gpt-4o")
+        by_tier = {}
+        for m in reachable:
+            by_tier.setdefault(m.intelligence_tier.lower(), []).append(m.id)
+
+        # Every tier present with no floor must survive a floor at its own level
+        # and be excluded by a floor above it.
+        for idx, tier in enumerate(TIER_ORDER):
+            if tier not in by_tier:
+                continue
+            model_id = by_tier[tier][0]
+
+            settings.MIN_ROUTING_TIER = tier
+            assert is_model_routable(model_id), \
+                f"'{model_id}' is tier '{tier}' and must survive a '{tier}' floor"
+
+            for stronger in TIER_ORDER[idx + 1:]:
+                settings.MIN_ROUTING_TIER = stronger
+                assert not is_model_routable(model_id), \
+                    f"'{model_id}' is tier '{tier}' and must be excluded by a '{stronger}' floor"
 
         # An unusable floor must not empty the fleet: a typo that silently
         # blocked every model would take the gateway down rather than degrade.
         settings.MIN_ROUTING_TIER = "enormous"
-        assert is_model_routable("gpt-4o-mini"), "an unrecognised floor must be ignored, not fatal"
+        assert any(is_model_routable(m.id) for m in settings.CANDIDATE_MODELS), \
+            "an unrecognised floor must be ignored, not fatal"
     finally:
         settings.MIN_ROUTING_TIER = original
         settings.ROUTING_MODELS = original_models

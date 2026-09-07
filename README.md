@@ -142,19 +142,27 @@ You only need one. Cheapest to start with:
 
 | Provider | Where | Notes |
 |---|---|---|
-| **Groq** | [console.groq.com/keys](https://console.groq.com/keys) | Free tier. **Start here** — it can drive a harness. |
+| **Groq** | [console.groq.com/keys](https://console.groq.com/keys) | Free tier. **Start here** for chat routing and the dashboard. Unreliable for driving Codex: [see below](#interactive-mode-point-your-harness-at-the-gateway) |
 | OpenAI | [platform.openai.com](https://platform.openai.com/api-keys) | Needs billing credits |
 | Google | [aistudio.google.com](https://aistudio.google.com/apikey) | Needs billing credits |
 | Ollama | [ollama.com](https://ollama.com) | Local, free — but see the warning below |
 
 Models whose provider has no key are skipped automatically, so an `.env` with
-only `GROQ_API_KEY` set is a perfectly valid setup.
+only `GROQ_API_KEY` set is a perfectly valid setup for chat routing and the
+dashboard.
 
-**Ollama alone is not enough for a harness.** A local 7B model cannot
-reliably drive Codex or Claude Code — it degrades to printing JSON as text
-instead of calling tools — so it is excluded from agentic turns by design. Set
-up with only Ollama and your first Codex turn has nothing to route to. The
-gateway says so at startup rather than letting you discover it mid-task:
+**Free models are not enough to run a coding agent.** That holds for the local
+Ollama models and for Groq's free tier alike: chat and simple tool calls are
+fine, and sustaining a harness's multi-step loop is a different thing that none
+of them do reliably. The
+[harness support table](#interactive-mode-point-your-harness-at-the-gateway)
+has what was measured for each. Pair them with one paid key if you want to
+point Codex or Claude Code at this.
+
+A local 7B degrades to printing JSON as text instead of calling tools, so it is
+excluded from agentic turns by design, and with only Ollama configured your
+first Codex turn has nothing to route to. The gateway says so at startup rather
+than letting you discover it mid-task:
 
 ```
 WARNING  Chat works (ollama/qwen2.5-coder:7b), but no tool-capable model is
@@ -305,15 +313,36 @@ proceed without prompting.
 OpenCode picks one model per session and has no task-based routing of its own,
 so the routing here is additive rather than duplicated.
 
-Verified against the free Groq tier:
-
 | Harness | Free tier (Groq/Ollama) | Paid provider | Note |
 |---|---|---|---|
-| **Codex CLI** | yes | yes | ~5k tokens per turn after tool budgeting |
+| **Codex CLI** | **unreliable** | yes | see below |
 | **OpenCode** | yes | yes | small payload; created files and passing tests |
-| **Claude Code** | no | **yes** | ~30k tokens per turn. Exceeds Groq's 8k/minute free ceiling; fine on a provider without one |
+| **Claude Code** | no | **yes** | ~30k tokens per turn, over Groq's 8k/minute free ceiling; fine on a provider without one |
 
-All three verified end to end, creating real files.
+**On the free tier, only `gpt-oss-120b` can drive a harness at all, and it does
+so about two times in three.** Running the same small task through Codex three
+times, twice the run died with:
+
+```
+Target model call failed for 'groq/openai/gpt-oss-120b'
+(invalid literal for int() with base 10: 'tool_use_failed')
+```
+
+The model handles plain chat and a single simple tool call without trouble. It
+is Codex's much larger tool payload it cannot reliably produce a valid call
+against, and Groq's `tool_use_failed` response then hits a parse error rather
+than failing cleanly.
+
+The other free-tier models do not get that far: `gpt-oss-20b` and
+`qwen3.6-27b` are marked `drives_agents=False` after both explored a directory
+and then stopped without doing the work, and `ollama/qwen2.5-coder:7b` does not
+emit usable tool calls under a harness preamble at all.
+
+**So the free tier is a good way to try the routing and the dashboard, and it is
+not a way to run Codex or Claude Code.** For agentic work, pair it with one paid
+key. Chat routing across the open-source fleet works well: on a Groq plus Ollama
+setup, renames and regexes route to the local 7B at zero cost and a sharding
+migration escalates to `gpt-oss-20b`.
 
 **Give agentic work a capable tier.** Claude Code sends a much larger preamble
 than the others, and the weakest models lose the thread under it: routed to
@@ -754,13 +783,15 @@ how far wrong an under-route can go.
 
 **One more thing worth knowing before you read a small saving as a bug.**
 Routing down only saves money if something cheaper exists. If the cheapest
-model that can drive a harness is already a strong tier — Groq's free
-`gpt-oss-20b` is `high` at $0.000075/1k — then every decision correctly lands
-there and the gateway has nothing to save. The gateway says so at startup:
+model that can drive a harness is already a strong tier — on a Groq-only fleet
+that is `gpt-oss-120b`, which is `frontier` — then every decision correctly
+lands there and the gateway has nothing to save. The gateway says so at
+startup:
 
 ```
-INFO  Cheapest tool-capable model (groq/openai/gpt-oss-20b) is already 'high'
-      tier, so most requests will route there and cost savings will be small.
+INFO  Cheapest tool-capable model (groq/openai/gpt-oss-120b) is already
+      'frontier' tier, so most requests will route there and cost savings
+      will be small.
       Add a cheaper capable model to widen the spread.
 ```
 
@@ -776,8 +807,8 @@ Same task, same rubric, scored 1-10:
 
 | `JUDGE_MODEL` | did the work | wrote a tutorial | separates? | speed | cost |
 |---|---|---|---|---|---|
-| `groq/openai/gpt-oss-20b` *(default)* | 10 | 1 | yes | 0.7s | free tier |
-| `groq/openai/gpt-oss-120b` | 10 | 2 | yes | 0.8s | free tier |
+| `groq/openai/gpt-oss-20b` | 10 | 1 | yes | 0.7s | free tier |
+| `groq/openai/gpt-oss-120b` *(default)* | 10 | 2 | yes | 0.8s | free tier |
 | `ollama/gemma3:12b` | 10 | 1 | yes | ~25s | free, local |
 | `ollama/qwen2.5-coder:7b` | 10 | **8** | **no** | ~9s | free, local |
 
@@ -792,10 +823,11 @@ to you, so it does not delay anything you see.
 tutorial 8 out of 10. Every one of those scores would teach the router that
 models which explain instead of acting are doing fine.
 
-A judge is best at least as capable as the models it grades. The default is a
-20B model scoring work sometimes done by a 120B one, which is a real limitation
-on the signal — `groq/openai/gpt-oss-120b` costs more per turn and gives a
-better one.
+A judge is best at least as capable as the models it grades, which is why the
+default is the 120B rather than the 20B: on a fleet that routes to frontier
+tiers, a small judge is scoring work it could not have produced. Note that
+judging is unaffected by the agentic limits above -- reading a completion and
+grading it is a single call, not a loop, and the free tier does that fine.
 
 ---
 

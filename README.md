@@ -111,7 +111,7 @@ The router therefore starts out generic and gradually learns *your* prompts.
 
 ## Quickstart
 
-Needs **Python 3.10+** and an API key for at least one provider.
+Needs **Python 3.12+** and an API key for at least one provider.
 
 ```bash
 git clone https://github.com/vencat2025/Wormhole.git

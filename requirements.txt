@@ -4,6 +4,10 @@
 # litellm and behave differently from the one described in the README, with no
 # change here to explain why. Pinning makes a checkout reproducible; run
 # `pip list --outdated` when you want to move.
+#
+# Python 3.12 or newer. numpy 2.5 requires 3.12 and scikit-learn 1.9 requires
+# 3.11; a 3.10 interpreter fails at install time with "No matching
+# distribution", which is what CI showed when it was still testing 3.10.
 # Core runtime. This is all you need to run the gateway.
 fastapi==0.141.1
 uvicorn==0.52.1
